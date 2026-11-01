@@ -3,6 +3,13 @@
 set -e
 echo "== P1: 换身份 + 固定签名 =="
 
+# ── 0. 新增源码文件（本地模型模块）─────────────────────────────
+if [ -d ../repo/patch/files ]; then
+    cp -r ../repo/patch/files/. .
+    echo "  已放入新增源码："
+    find ../repo/patch/files -type f | sed 's|.*patch/files/|    |'
+fi
+
 # ── 1. applicationId ───────────────────────────────────────────
 # 只改安装身份，namespace 保持 com.wangzan101.mika 不动：
 # 这样源码包名和 R 类都不用动，改动面最小。
