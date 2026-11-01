@@ -35,12 +35,11 @@ jobs:
       - name: 应用补丁
         if: github.event.inputs.mode == 'patch'
         run: |
-          if [ -d repo/patch ]; then
-            cp -r repo/patch/. mika/
-            echo "补丁已应用："
-            find repo/patch -type f | sed 's|repo/patch/|  |'
+          if [ -f repo/patch/apply.sh ]; then
+            cd mika
+            BUILD_NUMBER=${{ github.run_number }} bash ../repo/patch/apply.sh
           else
-            echo "repo/patch 不存在，按原样构建"
+            echo "repo/patch/apply.sh 不存在，按原样构建"
           fi
 
       - name: JDK 17
@@ -67,7 +66,7 @@ jobs:
           cd repo
           git config user.name "builder"
           git config user.email "builder@users.noreply.github.com"
-          git add -f prebuilt
+          git add -f prebuilt keystore.jks
           if git diff --cached --quiet; then
             echo "产物无变化，跳过提交"
           else
