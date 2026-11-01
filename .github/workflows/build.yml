@@ -1,0 +1,76 @@
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'baseline = 原样 Mika 基线; patch = 应用我们的补丁'
+        required: false
+        default: 'baseline'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: 取我们的仓库（补丁所在）
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: 取 Mika 源码
+        run: |
+          git clone --depth 1 https://github.com/wangzan101/Mika.git mika
+          cd mika
+          echo "Mika HEAD: $(git rev-parse --short=7 HEAD)"
+          echo "$GITHUB_STEP_SUMMARY"
+
+      - name: 应用补丁
+        if: github.event.inputs.mode == 'patch'
+        run: |
+          if [ -d repo/patch ]; then
+            cp -r repo/patch/. mika/
+            echo "补丁已应用："
+            find repo/patch -type f | sed 's|repo/patch/|  |'
+          else
+            echo "repo/patch 不存在，按原样构建"
+          fi
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 构建 Debug
+        run: |
+          cd mika
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+        timeout-minutes: 45
+
+      - name: 收产物
+        run: |
+          mkdir -p repo/prebuilt
+          find mika/app/build/outputs -name '*.apk' -exec cp {} repo/prebuilt/ \;
+          ls -la repo/prebuilt
+
+      - name: 提交回仓库
+        run: |
+          cd repo
+          git config user.name "builder"
+          git config user.email "builder@users.noreply.github.com"
+          git add -f prebuilt
+          if git diff --cached --quiet; then
+            echo "产物无变化，跳过提交"
+          else
+            git commit -m "build ${{ github.run_number }} (${{ github.event.inputs.mode }})"
+            git push
+          fi
