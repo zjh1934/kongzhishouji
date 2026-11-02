@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # P1 身份改造补丁。cwd 必须是 mika/（CI 里 repo/ 与 mika/ 平级）
 set -e
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PATCH_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "== P1: 换身份 + 固定签名 =="
 
 # ── 0. 新增源码文件（本地模型模块）─────────────────────────────
@@ -287,7 +287,7 @@ PYEOF
 # 系统提示词：本地模式换精简版 + 开关同步
 # （写成独立 .py 而不是 heredoc —— 嵌套转义层数太多，刚才就写错过一次）
 echo "== 本地模式补丁 =="
-python3 "${SRC}/scripts/patch_local_mode.py"
+python3 "${PATCH_HOME}/scripts/patch_local_mode.py"
 
 # ── 4. 固定签名 ───────────────────────────────────────────────
 # Actions 每次是新 VM，AGP 自动生成的 debug.keystore 每次都换，
