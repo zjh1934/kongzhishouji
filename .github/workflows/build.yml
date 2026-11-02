@@ -60,6 +60,10 @@ jobs:
           mkdir -p repo/prebuilt
           find mika/app/build/outputs -name '*.apk' -exec cp {} repo/prebuilt/ \;
           ls -la repo/prebuilt
+          echo "--- APK 里的 native 库 ---"
+          for apk in repo/prebuilt/*.apk; do
+            unzip -l "$apk" | grep -E 'lib/.*\.so' || echo "  （这个包里没有 .so）"
+          done
 
       - name: 提交回仓库
         run: |
