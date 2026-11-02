@@ -248,6 +248,20 @@ else:
     print('  调用处已传 onOpenLocalModel')
 PYEOF
 
+# 前台服务权限：Android 12+ 会杀没有前台服务保护的后台子进程（SIGKILL，捕获不到）
+python3 - <<'PYEOF'
+p = 'app/src/main/AndroidManifest.xml'
+s = open(p, encoding='utf-8').read()
+if 'FOREGROUND_SERVICE' in s:
+    print('  前台服务权限已存在，跳过')
+else:
+    a = '    <uses-permission'
+    assert a in s, 'Manifest 里没找到 uses-permission'
+    s = s.replace(a, '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n' + a, 1)
+    open(p, 'w', encoding='utf-8').write(s)
+    print('  已加前台服务权限')
+PYEOF
+
 # 注册启动钩子：App 一启动就去拉本机服务
 # （用 ContentProvider 而不是 androidx.startup，后者要加依赖）
 python3 - <<'PYEOF'
@@ -257,7 +271,11 @@ prov = 'com.wangzan101.mika.local.LocalServerBoot'
 if prov in s:
     print('  启动钩子已注册，跳过')
 else:
-    tag = '    <provider\n        android:name="%s"\n        android:authorities="${applicationId}.localboot"\n        android:exported="false" />\n' % prov
+    tag = ('    <provider\n        android:name="%s"\n        android:authorities="${applicationId}.localboot"\n        android:exported="false" />\n'
+           '    <!-- Android 14 起前台服务必须声明类型，否则 startForeground 会抛异常 -->\n'
+           '    <service android:name="com.wangzan101.mika.local.LocalServerService"\n'
+           '        android:foregroundServiceType="specialUse"\n'
+           '        android:exported="false" />\n') % prov
     a = '    </application>'
     assert a in s, 'Manifest 里没找到 </application>'
     s = s.replace(a, tag + a, 1)
