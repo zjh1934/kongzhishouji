@@ -91,6 +91,48 @@ else:
     print('  native 构建已存在，跳过')
 PY
 
+# ── 3.7 放入 llama.cpp 运行时（P3b）────────────────────────────
+# 用官方 android-arm64 预编译包，不自己编。
+# 两个关键点：
+#   1. 可执行文件改名为 lib*.so —— 安卓 10 起 app 数据目录不能 execve，
+#      只有叫这个名字才会被解到 nativeLibraryDir
+#   2. 必须 strip —— 原始 274MB，strip 后 29MB（实测 10%）
+LLAMA_TAG="${LLAMA_TAG:-b12032}"
+if [ -f app/src/main/jniLibs/arm64-v8a/libllamaserver.so ]; then
+    echo "  运行时已存在，跳过"
+else
+    echo "  拉取 llama.cpp $LLAMA_TAG ..."
+    mkdir -p /tmp/llama && cd /tmp/llama
+    curl -sSL -o a.tar.gz \
+      "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_TAG/llama-$LLAMA_TAG-bin-android-arm64.tar.gz"
+    mkdir -p x && tar xzf a.tar.gz -C x
+    SRC=$(find x -maxdepth 1 -type d -name 'llama-b*' | head -1)
+    echo "    解包目录: $SRC"
+    sudo apt-get install -y -qq llvm >/dev/null 2>&1 || true
+    STRIP=$(which llvm-strip || which strip)
+    mkdir -p out
+    # 服务端要用的：启动器 + 实现 + 推理核心 + 视觉 + ggml 全家（含各 CPU 变体）
+    NEEDED="llama-server libllama-server-impl.so libllama-common.so libllama.so libmtmd.so \
+            libggml.so libggml-base.so libggml-rpc.so \
+            libggml-cpu-android_armv8.0_1.so libggml-cpu-android_armv8.2_1.so libggml-cpu-android_armv8.2_2.so \
+            libggml-cpu-android_armv8.6_1.so libggml-cpu-android_armv9.0_1.so libggml-cpu-android_armv9.2_1.so \
+            libggml-cpu-android_armv9.2_2.so"
+    for f in $NEEDED; do
+        [ -f "$SRC/$f" ] || { echo "    缺 $f，跳过"; continue; }
+        out_name="$f"
+        # 可执行启动器改名，才会被解出来
+        [ "$f" = "llama-server" ] && out_name="libllamaserver.so"
+        cp "$SRC/$f" "out/$out_name"
+        "$STRIP" --strip-unneeded "out/$out_name" 2>/dev/null || true
+    done
+    mkdir -p "$OLDPWD/app/src/main/jniLibs/arm64-v8a"
+    cp out/*.so "$OLDPWD/app/src/main/jniLibs/arm64-v8a/"
+    cd "$OLDPWD"
+    echo "  运行时就位："
+    ls -la app/src/main/jniLibs/arm64-v8a/ | head -20
+    du -sh app/src/main/jniLibs/arm64-v8a/
+fi
+
 # ── 4. 固定签名 ───────────────────────────────────────────────
 # Actions 每次是新 VM，AGP 自动生成的 debug.keystore 每次都换，
 # 签名不一致就装不上。所以自己造一把、提交回仓库复用。
