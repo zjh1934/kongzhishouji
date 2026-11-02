@@ -4,58 +4,66 @@ on:
   workflow_dispatch:
     inputs:
       what:
-        description: 'sizes = 核实直链大小'
+        description: 'ms = 核实魔搭上有没有这些 GGUF'
         required: false
-        default: 'sizes'
+        default: 'ms'
 
 permissions:
   contents: write
 
 jobs:
-  sizes:
+  ms:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: 用核实过的文件名 HEAD 直链
+      - name: 查魔搭上有没有候选 GGUF 仓库
         run: |
-          out=probe-result/model-sizes.md
+          out=probe-result/modelscope-gguf.md
           mkdir -p probe-result
-          echo "# 直链实测（HTTP码 / 字节 / 人类可读）" > $out
+          echo "# 魔搭上的端侧模型 GGUF 可用性" > $out
           echo "查询日期: $(date -u +%Y-%m-%d)" >> $out
           echo >> $out
           echo '```' >> $out
-          for url in \
-            "https://huggingface.co/mradermacher/GUI-Owl-1.5-4B-Instruct-GGUF/resolve/main/GUI-Owl-1.5-4B-Instruct.Q4_K_M.gguf" \
-            "https://huggingface.co/mradermacher/GUI-Owl-1.5-4B-Instruct-GGUF/resolve/main/GUI-Owl-1.5-4B-Instruct.mmproj-Q8_0.gguf" \
-            "https://huggingface.co/mradermacher/MAI-UI-2B-GGUF/resolve/main/MAI-UI-2B.Q4_K_M.gguf" \
-            "https://huggingface.co/mradermacher/MAI-UI-2B-GGUF/resolve/main/MAI-UI-2B.mmproj-Q8_0.gguf" \
-            "https://huggingface.co/unsloth/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3-VL-4B-Instruct-Q4_K_M.gguf" \
-            "https://huggingface.co/unsloth/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-F16.gguf" \
-            "https://huggingface.co/lmstudio-community/UI-TARS-2B-SFT-GGUF/resolve/main/UI-TARS-2B-SFT-Q4_K_M.gguf" \
-            "https://huggingface.co/lmstudio-community/UI-TARS-2B-SFT-GGUF/resolve/main/mmproj-model-f16.gguf" ; do
-            code=$(curl -sIL --max-time 30 -o /dev/null -w "%{http_code}" "$url")
-            sz=$(curl -sIL --max-time 30 "$url" | grep -i '^content-length:' | tail -1 | tr -d '\r' | awk '{print $2}')
-            if [ -n "$sz" ] && [ "$sz" != "0" ]; then
-              human=$(awk -v b="$sz" 'BEGIN{printf "%.2f GB", b/1073741824}')
-            else
-              human="未知"
-            fi
-            echo "$code  ${sz:-未知}  ($human)  $url" >> $out
+          for q in "MAI-UI" "GUI-Owl" "Qwen3-VL-4B" ; do
+            echo "=== 搜索: $q ===" >> $out
+            curl -sSL --max-time 30 \
+              "https://www.modelscope.cn/api/v1/models/?Name=$q&PageSize=20" \
+              -o /tmp/ms.json 2>/dev/null
+            python3 - <<'PYEOF' >> $out
+import json
+try:
+    d = json.load(open('/tmp/ms.json'))
+except Exception as e:
+    print('  读取失败:', e); raise SystemExit
+items = d.get('Data', {}).get('Models', []) if isinstance(d.get('Data'), dict) else []
+if not items:
+    print('  （没搜到）')
+for m in items:
+    name = m.get('Name') or ''
+    path = m.get('Path') or m.get('Id') or ''
+    dl = m.get('Downloads') or 0
+    print('  %-55s 下载量=%s' % (path or name, dl))
+PYEOF
           done
           echo '```' >> $out
 
-      - name: 顺带看看 unsloth 仓库里到底有哪些 gguf
+      - name: 直接探几个可能的魔搭仓库
         run: |
-          out=probe-result/model-sizes.md
+          out=probe-result/modelscope-gguf.md
           echo >> $out
-          echo "## unsloth/Qwen3-VL-4B-Instruct-GGUF 的 gguf 文件" >> $out
+          echo "## 直接探仓库文件（HTTP码 / 字节）" >> $out
           echo '```' >> $out
-          curl -sSL --max-time 30 "https://huggingface.co/api/models/unsloth/Qwen3-VL-4B-Instruct-GGUF" \
-            | grep -o '"rfilename":"[^"]*"' \
-            | sed 's/"rfilename":"//; s/"$//' \
-            | grep -i gguf | sort >> $out
+          probe() {
+            url="$1"
+            code=$(curl -sIL --max-time 25 -o /dev/null -w "%{http_code}" "$url")
+            sz=$(curl -sIL --max-time 25 "$url" | grep -i '^content-length:' | tail -1 | tr -d '\r' | awk '{print $2}')
+            echo "$code  ${sz:-未知}  $url" >> $out
+          }
+          probe "https://www.modelscope.cn/api/v1/models/mradermacher/MAI-UI-2B-GGUF/repo?Revision=master&FilePath=MAI-UI-2B.Q4_K_M.gguf"
+          probe "https://www.modelscope.cn/api/v1/models/mradermacher/GUI-Owl-1.5-4B-Instruct-GGUF/repo?Revision=master&FilePath=GUI-Owl-1.5-4B-Instruct.Q4_K_M.gguf"
+          probe "https://www.modelscope.cn/api/v1/models/unsloth/Qwen3-VL-4B-Instruct-GGUF/repo?Revision=master&FilePath=Qwen3-VL-4B-Instruct-Q4_K_M.gguf"
           echo '```' >> $out
 
       - name: 提交回仓库
@@ -63,4 +71,4 @@ jobs:
           git config user.name "probe"
           git config user.email "probe@users.noreply.github.com"
           git add -f probe-result
-          git diff --cached --quiet && echo "无变化" || (git commit -m "probe: 直链大小 $(date -u +%F)" && git push)
+          git diff --cached --quiet && echo "无变化" || (git commit -m "probe: 魔搭可用性 $(date -u +%F)" && git push)
