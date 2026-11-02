@@ -78,7 +78,9 @@ object BackendSwitch {
 
         val caps = Capabilities(
             toolCalls = true,
-            vision = true,
+            // 本地模式不发截图：见 LocalProviderRegistrar 里的说明与链路对照报告。
+            // Mika 靠无障碍树 + OCR 文字定位元素，不需要把 JPEG 塞进请求。
+            vision = false,
             contextTokens = LocalMemoryBudget.contextFor(ctx),
             reasoning = false,
         )
@@ -86,6 +88,13 @@ object BackendSwitch {
             _hint.value = "切不过去：本机服务商登记失败"
             return
         }
+
+        // ⚠️ `use()` 只在「配置不存在」时才 save()，已有配置不会用新 caps 覆盖。
+        // 而用户手机上很可能存着上一版留下的 vision=true —— 那样改代码也没用。
+        // setModelVision 写的是 provider 的 visionOverrides，configFor() 里
+        // `seesImages(stored, userSaid, ...)` 是 `userSaid ?: ...`，强制优先，
+        // 能把旧配置摁成 false。这一步不能省。
+        store.setModelVision(provider.id, LocalProviderRegistrar.MODEL_ID, false)
 
         LocalServerService.start(ctx)
         _mode.value = Mode.Local
