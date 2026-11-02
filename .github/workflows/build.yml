@@ -60,10 +60,16 @@ jobs:
           mkdir -p repo/prebuilt
           find mika/app/build/outputs -name '*.apk' -exec cp {} repo/prebuilt/ \;
           ls -la repo/prebuilt
-          echo "--- APK 里的 native 库 ---"
-          for apk in repo/prebuilt/*.apk; do
-            unzip -l "$apk" | grep -E 'lib/.*\.so' || echo "  （这个包里没有 .so）"
-          done
+          {
+            echo "# 本次构建的 APK 内容（run ${{ github.run_number }}, $(date -u +%Y-%m-%d)）"
+            echo
+            echo "APK 体积: $(stat -c%s repo/prebuilt/app-debug.apk 2>/dev/null) 字节"
+            echo
+            echo '## lib/ 下的原生库'
+            echo '```'
+            unzip -l repo/prebuilt/app-debug.apk | grep -E 'lib/.*\.so' || echo "（没有 .so）"
+            echo '```'
+          } > repo/prebuilt/apk-libs.md
 
       - name: 提交回仓库
         run: |
