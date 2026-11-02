@@ -133,6 +133,98 @@ else
     du -sh app/src/main/jniLibs/arm64-v8a/
 fi
 
+# ── 3.8 服务预设 + 设置页入口（P4）────────────────────────────
+# 核心一行：把本机服务当成一个"填地址的服务商"。
+# Mika 本来就有 Ollama / LM Studio 两个这样的预设，我们照它的范式加一个。
+# 这样 buildModel() 一个字都不用改，直接走现成的 OpenAiCompatModel。
+python3 - <<'PY'
+p = 'app/src/main/java/com/wangzan101/mika/settings/ProviderPresets.kt'
+s = open(p, encoding='utf-8').read()
+anchor = '        ProviderPreset("自定义", ProviderConfig.Kind.OpenAiCompat, "", caps()),'
+assert anchor in s, '自定义 preset 未找到'
+if '本机模型' not in s:
+    s = s.replace(anchor,
+        '        // 手机上自己跑的模型:地址是本机的服务,不要 Key;能看图(视觉由 mmproj 提供)\n'
+        '        ProviderPreset("本机模型", ProviderConfig.Kind.OpenAiCompat, "http://127.0.0.1:8080/v1", caps(vision = true), selfHosted = true),\n'
+        + anchor, 1)
+    open(p, 'w', encoding='utf-8').write(s)
+    print('  已加「本机模型」预设')
+else:
+    print('  预设已存在，跳过')
+PY
+
+# 导航：加一个页面。Route 是 enum，when 是语句不是表达式，加枚举不会破坏穷举性。
+python3 - <<'PY'
+p = 'app/src/main/java/com/wangzan101/mika/ui/Navigation.kt'
+s = open(p, encoding='utf-8').read()
+old = 'enum class Route { Chat, Settings, Memory, Plans, Browser, Run, Source, PhoneSetup, Models, SpeechModel, Welcome, ModelSetup, About, License, Screens }'
+assert old in s, 'Route 枚举未找到'
+if 'LocalModel' not in s:
+    s = s.replace(old, old.replace(', Screens }', ', Screens, LocalModel }'), 1)
+    open(p, 'w', encoding='utf-8').write(s)
+    print('  Route 已加 LocalModel')
+else:
+    print('  Route 已有 LocalModel，跳过')
+PY
+
+# when 分支
+python3 - <<'PY'
+p = 'app/src/main/java/com/wangzan101/mika/ui/MainActivity.kt'
+s = open(p, encoding='utf-8').read()
+anchor = '        Route.Models -> ModelsScreen(store, onBack = back, onOpenSpeech = { nav.push(Route.SpeechModel) })'
+assert anchor in s, 'Route.Models 分支未找到'
+if 'Route.LocalModel ->' not in s:
+    s = s.replace(anchor, anchor +
+        '\n        Route.LocalModel -> com.wangzan101.mika.local.LocalModelScreen(onBack = back)', 1)
+    open(p, 'w', encoding='utf-8').write(s)
+    print('  MainActivity 已加 LocalModel 分支')
+else:
+    print('  MainActivity 分支已存在，跳过')
+PY
+
+# 设置页入口：在「模型」那一行下面加一行
+python3 - <<'PY'
+import re
+p = 'app/src/main/java/com/wangzan101/mika/ui/SettingsScreen.kt'
+s = open(p, encoding='utf-8').read()
+if 'onOpenLocalModel' in s:
+    print('  设置页入口已存在，跳过')
+else:
+    # 1) 签名加参数
+    m = re.search(r'^fun SettingsScreen\(', s, re.M)
+    assert m, 'SettingsScreen 定义未找到'
+    i = s.index('onBack: () -> Unit', m.start())
+    s = s[:i] + 'onOpenLocalModel: () -> Unit,\n    ' + s[i:]
+
+    # 2) 加一行入口（紧跟「模型」那一行之后）
+    m2 = re.search(r'^(\s*)ListRow\(MikaIcons\.Spark, stringResource\(R\.string\.settings_model\).*$', s, re.M)
+    assert m2, '模型行未找到'
+    indent = m2.group(1)
+    s = s[:m2.end()] + ('\n' +
+        indent + 'ListRow(MikaIcons.Spark, "本机模型", "不联网，在手机上跑",\n' +
+        indent + '    onClick = onOpenLocalModel) { RowChevron() }'
+    ) + s[m2.end():]
+
+    open(p, 'w', encoding='utf-8').write(s)
+    print('  设置页已加入口')
+PY
+
+# 调用处传参：改 MainActivity 里 SettingsScreen(...) 的实参
+python3 - <<'PY'
+import re
+p = 'app/src/main/java/com/wangzan101/mika/ui/MainActivity.kt'
+s = open(p, encoding='utf-8').read()
+if 'onOpenLocalModel' in s and 'onOpenLocalModel = ' in s:
+    print('  调用处已传参，跳过')
+elif 'onOpenModels = { nav.push(Route.Models) }' in s:
+    s = s.replace('onOpenModels = { nav.push(Route.Models) }',
+                  'onOpenModels = { nav.push(Route.Models) },\n                onOpenLocalModel = { nav.push(Route.LocalModel) }', 1)
+    open(p, 'w', encoding='utf-8').write(s)
+    print('  调用处已传 onOpenLocalModel')
+else:
+    print('  ⚠ 没找到 onOpenModels 调用处，需人工确认')
+PY
+
 # ── 4. 固定签名 ───────────────────────────────────────────────
 # Actions 每次是新 VM，AGP 自动生成的 debug.keystore 每次都换，
 # 签名不一致就装不上。所以自己造一把、提交回仓库复用。
