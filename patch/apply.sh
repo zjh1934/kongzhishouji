@@ -145,8 +145,11 @@ anchor = '        ProviderPreset("自定义", ProviderConfig.Kind.OpenAiCompat, 
 assert anchor in s, '自定义 preset 未找到'
 if '本机模型' not in s:
     s = s.replace(anchor,
-        '        // 手机上自己跑的模型:地址是本机的服务,不要 Key;能看图(视觉由 mmproj 提供)\n'
-        '        ProviderPreset("本机模型", ProviderConfig.Kind.OpenAiCompat, "http://127.0.0.1:8080/v1", caps(vision = true), selfHosted = true),\n'
+        '        // 手机上自己跑的模型:地址是本机的服务,不要 Key。\n'
+        '        // vision=false:本地模式靠无障碍树+OCR 文字定位,不发 base64 截图。\n'
+        '        // 打开会让 llama-server 先跑视觉塔 prefill,端侧 CPU 上一个 token 都不吐,\n'
+        '        // 触发 Mika 的 120s 读超时 ×3 次重试(详见 research/模型调用链路对照.md)。\n'
+        '        ProviderPreset("本机模型", ProviderConfig.Kind.OpenAiCompat, "http://127.0.0.1:8080/v1", caps(vision = false), selfHosted = true),\n'
         + anchor, 1)
     open(p, 'w', encoding='utf-8').write(s)
     print('  已加「本机模型」预设')
