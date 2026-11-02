@@ -1,6 +1,5 @@
 name: Probe
 
-# 沙盒访问不到 github.com，用 CI 当眼睛。
 on:
   workflow_dispatch:
     inputs:
@@ -25,87 +24,77 @@ jobs:
           curl -sSL -o android.tar.gz \
             "https://github.com/ggml-org/llama.cpp/releases/download/${{ github.event.inputs.tag }}/llama-${{ github.event.inputs.tag }}-bin-android-arm64.tar.gz"
           mkdir -p x && tar xzf android.tar.gz -C x
-          echo "解包完成"
+          ls x/
 
-      - name: 是否已经 strip + 文件类型
+      - name: 找能 strip aarch64 的工具
         run: |
-          cd probe/x/llama-b12032
-          for f in llama-server libllama.so libmtmd.so libggml.so libggml-base.so libllama-server-impl.so libllama-common.so; do
-            echo "--- $f ---"
-            file "$f" 2>/dev/null | cut -c1-200
+          echo "llvm-strip: $(which llvm-strip || echo 无)"
+          echo "aarch64-linux-gnu-strip: $(which aarch64-linux-gnu-strip || echo 无)"
+          llvm-strip --version 2>/dev/null | head -2 || true
+
+      - name: strip 全部 so（用 llvm-strip）
+        run: |
+          cd probe
+          mkdir -p stripped
+          SRC="x/llama-b12032"
+          STRIP=$(which llvm-strip)
+          [ -z "$STRIP" ] && { sudo apt-get update -qq; sudo apt-get install -y -qq binutils-aarch64-linux-gnu; STRIP=aarch64-linux-gnu-strip; }
+          echo "用: $STRIP"
+          ls "$SRC" | head -50
+          for f in "$SRC"/*.so; do
+            n=$(basename "$f")
+            cp "$f" "stripped/$n"
+            "$STRIP" --strip-unneeded "stripped/$n" 2>&1 | head -2 || true
           done
+          cp "$SRC/llama-server" stripped/llama-server
+          "$STRIP" --strip-unneeded stripped/llama-server 2>&1 | head -2 || true
+          echo "--- strip 完成 ---"
 
-      - name: strip 后体积对比（服务端最小集）
+      - name: 体积对比表
         run: |
-          cd probe/x/llama-b12032
-          mkdir -p ../stripped
+          cd probe
+          SRC="x/llama-b12032"
           NEEDED="llama-server libllama-server-impl.so libllama-common.so libllama.so libmtmd.so libggml.so libggml-base.so libggml-rpc.so"
           NEEDED="$NEEDED libggml-cpu-android_armv8.0_1.so libggml-cpu-android_armv8.2_1.so libggml-cpu-android_armv8.2_2.so"
           NEEDED="$NEEDED libggml-cpu-android_armv8.6_1.so libggml-cpu-android_armv9.0_1.so libggml-cpu-android_armv9.2_1.so libggml-cpu-android_armv9.2_2.so"
-          echo "| 文件 | 原始 | strip 后 |"
-          echo "|---|---:|---:|"
-          TOT_A=0; TOT_B=0
+          echo "| 文件 | 原始 | strip后 |" > size.md
+          echo "|---|---:|---:|" >> size.md
+          TA=0; TB=0
           for f in $NEEDED; do
-            [ -f "$f" ] || continue
-            a=$(stat -c%s "$f")
-            cp "$f" "../stripped/$f"
-            strip --strip-unneeded "../stripped/$f" 2>/dev/null || echo "  (strip 失败: $f)"
-            b=$(stat -c%s "../stripped/$f")
-            TOT_A=$((TOT_A+a)); TOT_B=$((TOT_B+b))
-            echo "| $f | $a | $b |"
+            a=$(stat -c%s "$SRC/$f" 2>/dev/null || echo 0)
+            b=$(stat -c%s "stripped/$f" 2>/dev/null || echo 0)
+            TA=$((TA+a)); TB=$((TB+b))
+            echo "| $f | $a | $b |" >> size.md
           done
-          echo "合计: 原始 $TOT_A -> strip 后 $TOT_B"
-          echo "$TOT_A" > ../tot_a.txt
-          echo "$TOT_B" > ../tot_b.txt
+          echo "" >> size.md
+          echo "**服务端最小集合计：原始 $TA → strip 后 $TB（$((TB*100/TA))%）**" >> size.md
+          cat size.md
 
-      - name: 试试 qemu 跑一下（能不能真的执行）
+      - name: qemu 冒烟测试：能不能真跑起来
         run: |
           set +e
           sudo apt-get update -qq >/dev/null 2>&1
           sudo apt-get install -y -qq qemu-user-static >/dev/null 2>&1
-          cd probe/x/llama-b12032
-          echo "=== qemu-aarch64 可用性 ==="
-          which qemu-aarch64-static qemu-aarch64 2>/dev/null || echo "  （没装到 qemu）"
+          cd probe/stripped
           Q=$(which qemu-aarch64-static || which qemu-aarch64)
+          echo "qemu: ${Q:-无}"
           if [ -n "$Q" ]; then
-            echo "=== llama-server --help ==="
-            LD_LIBRARY_PATH=. timeout 60 "$Q" ./llama-server --help 2>&1 | head -30
-            echo "=== 退出码: $? ==="
+            echo "=== --help 前 25 行 ==="
+            LD_LIBRARY_PATH=. timeout 90 "$Q" ./llama-server --help 2>&1 | head -25
+            echo "=== 退出码 ${PIPESTATUS[0]} ==="
           fi
 
-      - name: 结果写回仓库
+      - name: 结果写回
         run: |
-          mkdir -p probe-result
           cd probe
           {
-            echo "# llama.cpp android-arm64 打包可行性（tag ${{ github.event.inputs.tag }}）"
-            echo "查询日期: $(date -u +%Y-%m-%d)"
+            echo "# llama.cpp android-arm64 打包可行性（${{ github.event.inputs.tag }}）"
+            echo "日期: $(date -u +%Y-%m-%d)"
             echo
-            echo "## 体积：原始 vs strip"
-            echo
-            echo "| 文件 | 原始 | strip 后 |"
-            echo "|---|---:|---:|"
-            NEEDED="llama-server libllama-server-impl.so libllama-common.so libllama.so libmtmd.so libggml.so libggml-base.so libggml-rpc.so"
-            NEEDED="$NEEDED libggml-cpu-android_armv8.0_1.so libggml-cpu-android_armv8.2_1.so libggml-cpu-android_armv8.2_2.so"
-            NEEDED="$NEEDED libggml-cpu-android_armv8.6_1.so libggml-cpu-android_armv9.0_1.so libggml-cpu-android_armv9.2_1.so libggml-cpu-android_armv9.2_2.so"
-            for f in $NEEDED; do
-              [ -f "x/llama-b12032/$f" ] || continue
-              a=$(stat -c%s "x/llama-b12032/$f")
-              b=$(stat -c%s "stripped/$f" 2>/dev/null || echo 0)
-              echo "| $f | $a | $b |"
-            done
-            echo
-            echo "**合计：原始 $(cat tot_a.txt 2>/dev/null) → strip 后 $(cat tot_b.txt 2>/dev/null)**"
-            echo
-            echo "## 文件类型"
-            echo '```'
-            for f in llama-server libllama.so libmtmd.so; do
-              echo "--- $f ---"; file "x/llama-b12032/$f" 2>/dev/null | cut -c1-200
-            done
-            echo '```'
+            cat size.md
           } > ../probe-result/packaging.md
           cd ..
           git config user.name "probe"
           git config user.email "probe@users.noreply.github.com"
           git add -f probe-result
-          git diff --cached --quiet && echo "无变化" || (git commit -m "probe: 打包可行性 ${{ github.event.inputs.tag }}" && git push)
+          git diff --cached --quiet && echo "无变化" || (git commit -m "probe: strip 体积 ${{ github.event.inputs.tag }}" && git push)
