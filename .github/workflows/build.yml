@@ -165,14 +165,48 @@ jobs:
           tail -40 apk-libs.md
 
       - name: 提交回仓库
+        id: publish
+        continue-on-error: true
         run: |
           cd repo
           git config user.name "builder"
           git config user.email "builder@users.noreply.github.com"
-          git add -f prebuilt keystore.jks
+          : > /tmp/pub.log
+          set +e
+          git add -f prebuilt keystore.jks 2>&1 | tee -a /tmp/pub.log
           if git diff --cached --quiet; then
-            echo "产物无变化，跳过提交"
-          else
-            git commit -m "build ${{ github.run_number }} (${{ github.event.inputs.mode }})"
-            git push
+            echo "产物无变化，跳过提交" | tee -a /tmp/pub.log
+            echo "rc=0" >> $GITHUB_OUTPUT
+            exit 0
           fi
+          git commit -m "build ${{ github.run_number }} (${{ github.event.inputs.mode }})" 2>&1 | tee -a /tmp/pub.log
+          # 构建跑了几分钟，远端很可能被别的提交推进过（比如上传补丁）→ 先同步再推
+          git fetch origin main 2>&1 | tee -a /tmp/pub.log
+          git rebase origin/main 2>&1 | tee -a /tmp/pub.log || {
+            echo "rebase 冲突，放弃" | tee -a /tmp/pub.log
+            git rebase --abort 2>&1 | tee -a /tmp/pub.log
+          }
+          git push origin HEAD:main 2>&1 | tee -a /tmp/pub.log
+          rc=${PIPESTATUS[0]}
+          echo "rc=$rc" >> $GITHUB_OUTPUT
+          exit $rc
+
+      - name: 提交失败时把日志写回仓库
+        if: steps.publish.outputs.rc != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd repo
+          mkdir -p logs
+          {
+            echo "# 提交失败 run ${{ github.run_number }}"
+            echo
+            echo '```'
+            tail -60 /tmp/pub.log
+            echo '```'
+          } > logs/publish-${{ github.run_number }}.md
+          # 用 API 直接写小文件：万一 push 这条路整个不通，日志也能拿回来
+          gh api "repos/${{ github.repository }}/contents/logs/publish-${{ github.run_number }}.md" \
+            -X PUT -f message="提交失败日志 run ${{ github.run_number }}" \
+            -f content="$(base64 -w0 logs/publish-${{ github.run_number }}.md)" || true
+          exit 1
