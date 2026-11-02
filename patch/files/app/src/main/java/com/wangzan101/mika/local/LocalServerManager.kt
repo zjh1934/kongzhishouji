@@ -110,6 +110,16 @@ class LocalServerManager(private val app: Context) {
         }
     }
 
+    /**
+     * 同步版停止：给不能在协程里收尾的场合用（页面销毁、进程要退了）。
+     * 只发 SIGTERM，不在这里等 —— 收尾路径不该阻塞。
+     */
+    fun stopNow() {
+        val p = proc ?: return
+        proc = null
+        runCatching { p.destroy() }
+    }
+
     /** 探一下能不能应答。 */
     private fun probe(port: Int): Boolean = try {
         http.newCall(Request.Builder().url("http://127.0.0.1:$port/health").build())
