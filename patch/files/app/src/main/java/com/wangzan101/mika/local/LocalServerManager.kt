@@ -143,7 +143,7 @@ class LocalServerManager(private val app: Context) {
     }
 
     /** 探一下能不能应答。 */
-    private fun probe(port: Int): Boolean = try {
+    fun probe(port: Int): Boolean = try {
         http.newCall(Request.Builder().url("http://127.0.0.1:$port/health").build())
             .execute().use { it.isSuccessful }
     } catch (e: Exception) {
