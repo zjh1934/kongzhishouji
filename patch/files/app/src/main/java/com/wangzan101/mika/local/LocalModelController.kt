@@ -168,6 +168,18 @@ class LocalModelController(app: Context) {
         LocalServerService.stop(ctx)
     }
 
+    /**
+     * 最小探针：不带 tools、不带图片、十几个字，直接问本机服务一句话。
+     * 见 [LocalProbe] 的说明 —— 用一次干净的调用把「服务/模型」和「Mika 的请求体」切开。
+     */
+    fun probe() {
+        scope.launch {
+            _ui.value = _ui.value.copy(message = "探针：正在请求…")
+            val result = withContext(Dispatchers.IO) { LocalProbe.run() }
+            _ui.value = _ui.value.copy(message = "探针：$result")
+        }
+    }
+
     fun delete() {
         val m = _current.value
         scope.launch {
