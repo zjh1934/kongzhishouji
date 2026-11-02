@@ -182,9 +182,9 @@ else:
     print('  MainActivity 分支已存在，跳过')
 PY
 
-# 设置页入口：在「模型」那一行下面加一行
-# 注意插入顺序：先插位置靠后的（列表行），再插位置靠前的（函数参数）。
-# 反了会因为字符串变长导致索引错位，插进半句话中间。
+# 设置页入口：在「模型」那张卡片里加一行
+# 坑：那行 ListRow 是多行的（结尾带 lambda），不能"插在它后面"，
+# 会插进 lambda 体内。改成"插在它前面 + 去掉它原来的 first = true"。
 python3 - <<'PYEOF'
 import re
 p = 'app/src/main/java/com/wangzan101/mika/ui/SettingsScreen.kt'
@@ -195,9 +195,13 @@ else:
     m2 = re.search(r'^(\s*)ListRow\(MikaIcons\.Spark, stringResource\(R\.string\.settings_model\).*$', s, re.M)
     assert m2, '模型行未找到'
     indent = m2.group(1)
-    s = s[:m2.end()] + (
-        '\n' + indent + 'ListRow(MikaIcons.Spark, "本机模型", "不联网，在手机上跑",\n'
-        + indent + '    onClick = onOpenLocalModel) { RowChevron() }'
+    line = m2.group(0)
+    # 原行去掉 first = true，让新行当第一项
+    line2 = line.replace('first = true, ', '')
+    s = s[:m2.start()] + (
+        indent + 'ListRow(MikaIcons.Spark, "本机模型", "不联网，在手机上跑",\n'
+        + indent + '    first = true, onClick = onOpenLocalModel) { RowChevron() }\n'
+        + line2
     ) + s[m2.end():]
     m = re.search(r'^fun SettingsScreen\(', s, re.M)
     assert m, 'SettingsScreen 定义未找到'
@@ -206,6 +210,20 @@ else:
     open(p, 'w', encoding='utf-8').write(s)
     assert s.count('onOpenLocalModel') == 2, '入口数不对'
     print('  设置页已加入口')
+PYEOF
+
+# 调用处传参（SettingsScreen 的实参）
+python3 - <<'PYEOF'
+p = 'app/src/main/java/com/wangzan101/mika/ui/MainActivity.kt'
+s = open(p, encoding='utf-8').read()
+if 'onOpenLocalModel = ' in s:
+    print('  调用处已传参，跳过')
+else:
+    a = 'onOpenModels = { nav.push(Route.Models) }'
+    assert a in s, 'onOpenModels 调用处未找到'
+    s = s.replace(a, a + ',\n                onOpenLocalModel = { nav.push(Route.LocalModel) }', 1)
+    open(p, 'w', encoding='utf-8').write(s)
+    print('  调用处已传 onOpenLocalModel')
 PYEOF
 
 # ── 4. 固定签名 ───────────────────────────────────────────────
