@@ -7,7 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,11 +15,15 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
+/** 单个文件的状态。两个文件分别显示，别再合成一个"已下载"。 */
+enum class FileState { Missing, Ready, Bad }
+
 /** 界面上要显示的一切。 */
 data class LocalModelUi(
     val downloading: Boolean = false,
     val progress: DownloadProgress? = null,
-    /** 当前选中的模型两个文件都在。 */
+    /** 主模型、视觉投影各自的状态。 */
+    val fileStates: List<FileState> = listOf(FileState.Missing, FileState.Missing),
     val ready: Boolean = false,
     val server: LocalServerState = LocalServerState.Stopped,
     val message: String? = null,
@@ -42,7 +45,6 @@ class LocalModelController(app: Context) {
     private val prefs = ctx.getSharedPreferences("local_model", Context.MODE_PRIVATE)
     private val store = LocalModelStore(File(ctx.getExternalFilesDir(null), "models"))
     private val downloader = LocalModelDownloader()
-    private val server = LocalServerManager(ctx)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val _ui = MutableStateFlow(LocalModelUi())
@@ -51,18 +53,25 @@ class LocalModelController(app: Context) {
     private val _current = MutableStateFlow(loadChoice())
     val current: StateFlow<LocalModelCatalog.Model> = _current.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+        // 服务状态看总线那一份：服务是自己起的、也可能已经起来了，
+        // 页面不该另起一套去猜（猜就会不一致）
+        scope.launch {
+            LocalServerStateBus.state.collect { st ->
+                _ui.value = _ui.value.copy(server = st)
+            }
+        }
+    }
 
     /** 换模型。正在跑的服务要停掉 —— 换模型还占着旧权重没意义。 */
     fun select(model: LocalModelCatalog.Model) {
         if (model.id == _current.value.id) return
-        scope.launch {
-            server.stop()
-            prefs.edit().putString(KEY_CHOICE, model.id).apply()
-            _current.value = model
-            _ui.value = LocalModelUi(server = LocalServerState.Stopped)
-            refresh()
-        }
+        LocalServerService.stop(ctx)
+        prefs.edit().putString(KEY_CHOICE, model.id).apply()
+        _current.value = model
+        _ui.value = LocalModelUi()
+        refresh()
     }
 
     private fun loadChoice(): LocalModelCatalog.Model {
@@ -71,8 +80,26 @@ class LocalModelController(app: Context) {
         return saved ?: LocalModelCatalog.recommend(ramGb()) ?: LocalModelCatalog.DEFAULT
     }
 
+    /**
+     * 刷新两个文件各自的状态。
+     *
+     * **必须分开显示**：只给一个汇总的"已下载"，用户不知道哪个文件缺、
+     * 也可能因为看到"下载"按钮把已经导入的 2 GB 又下一遍。
+     */
     fun refresh() {
-        _ui.value = _ui.value.copy(ready = store.isModelReady(_current.value))
+        val m = _current.value
+        val states = m.files.map { f ->
+            val file = File(store.modelDir(), f.name)
+            when {
+                !file.exists() -> FileState.Missing
+                store.verify(file, f) -> FileState.Ready
+                else -> FileState.Bad
+            }
+        }
+        _ui.value = _ui.value.copy(
+            fileStates = states,
+            ready = states.all { it == FileState.Ready },
+        )
     }
 
     /** App 内下载。支持断点续传，主源失败自动换备选源。 */
@@ -83,9 +110,12 @@ class LocalModelController(app: Context) {
             when (val r = downloader.download(store, m) { p ->
                 _ui.value = _ui.value.copy(progress = p)
             }) {
-                is DownloadResult.Ok -> _ui.value = _ui.value.copy(
-                    downloading = false, ready = true, progress = null, message = "下载完成",
-                )
+                is DownloadResult.Ok -> {
+                    _ui.value = _ui.value.copy(
+                        downloading = false, progress = null, message = "下载完成",
+                    )
+                    refresh()
+                }
                 is DownloadResult.Failed -> _ui.value = _ui.value.copy(
                     downloading = false, progress = null,
                     message = r.message + if (r.retryable) "（已保留进度，可继续）" else "",
@@ -111,13 +141,13 @@ class LocalModelController(app: Context) {
             if (copied && !ok) withContext(Dispatchers.IO) { out.delete() }
             _ui.value = _ui.value.copy(
                 importing = false,
-                ready = store.isModelReady(m),
                 message = when {
                     !copied -> "读不到这个文件"
                     !ok -> "文件对不上（不完整或不是这个文件），已丢弃"
-                    else -> "导入成功"
+                    else -> "导入成功",
                 },
             )
+            refresh()
         }
     }
 
@@ -126,48 +156,30 @@ class LocalModelController(app: Context) {
      *
      * 走 [LocalServerService]（前台服务）而不是直接起子进程：
      * Android 12+ 会杀没有前台服务保护的后台子进程，且是捕获不到的 SIGKILL。
-     * 界面这边只发个请求，真正的加载在后台做。
+     * **不在这里轮询等待** —— 服务那边会通过 [LocalServerStateBus] 把状态推过来，
+     * 页面实时显示，包括失败原因。
      */
     fun start() {
-        _ui.value = _ui.value.copy(server = LocalServerState.Starting(1), message = null)
+        _ui.value = _ui.value.copy(message = null)
         LocalServerService.start(ctx)
-        // 前台服务起来后要等它就绪，轮询一下告诉用户进展
-        scope.launch {
-            repeat(120) {
-                delay(1000)
-                if (server.probe(LocalServerManager.DEFAULT_PORT)) {
-                    _ui.value = _ui.value.copy(
-                        server = LocalServerState.Running(LocalServerManager.DEFAULT_PORT),
-                        message = "已就绪",
-                    )
-                    return@launch
-                }
-            }
-            _ui.value = _ui.value.copy(
-                server = LocalServerState.Failed("等了 2 分钟还没起来，看通知栏有没有报错"),
-            )
-        }
     }
 
     fun stop() {
         LocalServerService.stop(ctx)
-        _ui.value = _ui.value.copy(server = LocalServerState.Stopped, message = "已停止")
     }
 
     fun delete() {
         val m = _current.value
         scope.launch {
-            server.stop()
+            LocalServerService.stop(ctx)
             withContext(Dispatchers.IO) { store.delete(m) }
-            _ui.value = _ui.value.copy(
-                server = LocalServerState.Stopped, ready = false, message = "已删除",
-            )
+            _ui.value = _ui.value.copy(message = "已删除")
+            refresh()
         }
     }
 
-    /** 页面走了一定要调：不然子进程白占几个 G 内存。 */
+    /** 页面走了要调（收协程）；**不要**在这里停服务 —— 服务该继续活着。 */
     fun close() {
-        server.stopNow()
         scope.cancel()
     }
 
@@ -179,11 +191,7 @@ class LocalModelController(app: Context) {
         }.getOrDefault(false)
     }
 
-    private fun ramGb(): Int {
-        val mi = ActivityManager.MemoryInfo()
-        (ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(mi)
-        return (mi.totalMem / (1024 * 1024 * 1024)).toInt()
-    }
+    private fun ramGb(): Int = LocalMemoryBudget.ramGb(ctx)
 
     private companion object { const val KEY_CHOICE = "choice" }
 }
