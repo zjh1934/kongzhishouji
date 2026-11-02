@@ -58,6 +58,39 @@ open(p, 'w', encoding='utf-8').write(s)
 print('  MikaLinks -> zjh1934/kongzhishouji (%d 处)' % n)
 PY
 
+# ── 3.5 引入 native 构建（P3a 空壳）────────────────────────────
+# Mika 原本没有任何 CMake/NDK 配置，这是第一次加。
+# 先只编一个空壳 .so，验证链路；真编 llama.cpp 是下一步。
+python3 - <<'PY'
+p = 'app/build.gradle.kts'
+s = open(p, encoding='utf-8').read()
+
+if 'externalNativeBuild' not in s:
+    # defaultConfig 内：只留 arm64（本地模型推理和原来的沙箱都是 arm64-only）
+    anchor = '        applicationId = "com.kongzhishouji.mika"'
+    assert anchor in s, 'applicationId 未找到（P1 是否已应用？）'
+    s = s.replace(anchor, anchor + '''
+        ndk { abiFilters += "arm64-v8a" }
+        externalNativeBuild { cmake { cppFlags += "-std=c++17" } }''', 1)
+
+    # android {} 层：CMake 入口
+    a2 = '    buildFeatures {'
+    assert a2 in s, 'buildFeatures 未找到'
+    s = s.replace(a2, '''    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+''' + a2, 1)
+
+    open(p, 'w', encoding='utf-8').write(s)
+    print('  native 构建已接入（CMake + arm64）')
+else:
+    print('  native 构建已存在，跳过')
+PY
+
 # ── 4. 固定签名 ───────────────────────────────────────────────
 # Actions 每次是新 VM，AGP 自动生成的 debug.keystore 每次都换，
 # 签名不一致就装不上。所以自己造一把、提交回仓库复用。
