@@ -1,6 +1,6 @@
-# 本次构建的 APK 内容（run 27, 2026-11-02）
+# 本次构建的 APK 内容（run 31, 2026-11-02）
 
-APK 体积: 104683385 字节
+APK 体积: 105299943 字节
 
 ## lib/ 下的原生库
 ```
@@ -28,7 +28,7 @@ APK 体积: 104683385 字节
 ```
 ## APK 自检
 
-体积: 104683385 字节
+体积: 105299943 字节
 
 ### zip 完整性
 ```
@@ -40,7 +40,7 @@ No errors detected in compressed data of app-debug.apk.
 
 ### aapt 能否解析（packageInfo 就是这里出的）
 ```
-package: name='com.kongzhishouji.mika' versionCode='61' versionName='0.1.33' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
+package: name='com.kongzhishouji.mika' versionCode='65' versionName='0.1.33' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
 sdkVersion:'30'
 targetSdkVersion:'35'
 uses-permission: name='android.permission.INTERNET'
