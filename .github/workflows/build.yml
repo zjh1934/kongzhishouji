@@ -107,6 +107,34 @@ jobs:
             echo '```'
           } > repo/prebuilt/apk-libs.md
 
+      - name: APK 自检（防止用户装到坏包）
+        run: |
+          cd repo/prebuilt
+          APK=app-debug.apk
+          {
+            echo "## APK 自检"
+            echo
+            echo "体积: $(stat -c%s $APK) 字节"
+            echo
+            echo "### zip 完整性"
+            echo '```'
+            unzip -t "$APK" >/tmp/zipt.log 2>&1 && echo "OK：全部条目 CRC 校验通过" || echo "❌ 有条目损坏"
+            tail -3 /tmp/zipt.log
+            echo '```'
+            echo
+            echo "### aapt 能否解析（packageInfo 就是这里出的）"
+            echo '```'
+            ${ANDROID_HOME}/build-tools/*/aapt dump badging "$APK" 2>&1 | head -12
+            echo '```'
+            echo
+            echo "### 签名是否完整"
+            echo '```'
+            ${ANDROID_HOME}/build-tools/*/apksigner verify --print-certs "$APK" 2>&1 | head -10
+            echo '```'
+          } >> apk-libs.md
+          echo "--- 自检结果 ---"
+          tail -40 apk-libs.md
+
       - name: 提交回仓库
         run: |
           cd repo
