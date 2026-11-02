@@ -4,10 +4,9 @@ import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
-import java.io.File
 
 /**
- * App 一启动就把本机服务拉起来。
+ * App 一启动就去把本机服务拉起来。
  *
  * 为什么要这个：服务预设只是让 Mika 去连 `127.0.0.1:8080`，
  * 但那个端口上的 llama-server 得有人去启动。不自动起的话，
@@ -20,7 +19,7 @@ import java.io.File
  * = 升级时多一处冲突。Mika 本身没有 startup 依赖，我们也不该为这点事加一个。
  *
  * 只是**发个请求**让它起来，不阻塞启动：加载 4B 视觉模型要二三十秒，
- * 在主线程等会把 App 卡死。
+ * 在主线程等会把 App 卡死。真正的活由 [LocalServerService] 在前台服务里做。
  */
 class LocalServerBoot : ContentProvider() {
 
@@ -29,15 +28,9 @@ class LocalServerBoot : ContentProvider() {
         Thread {
             runCatching {
                 val prefs = app.getSharedPreferences("local_model", android.content.Context.MODE_PRIVATE)
-                val id = prefs.getString("choice", null) ?: return@Thread
-                val model = LocalModelCatalog.byId(id) ?: return@Thread
-                val store = LocalModelStore(File(app.getExternalFilesDir(null), "models"))
-                // 没下好就别白费劲
-                if (!store.isModelReady(model)) return@Thread
-                LocalServerManager(app).startAsync(
-                    modelPath = store.pathOf(model.main),
-                    mmprojPath = store.pathOf(model.mmproj),
-                )
+                // 用户从没选过（也没下过模型）就别白费劲
+                if (prefs.getString("choice", null) == null) return@Thread
+                LocalServerService.start(app)
             }
         }.start()
         return false
