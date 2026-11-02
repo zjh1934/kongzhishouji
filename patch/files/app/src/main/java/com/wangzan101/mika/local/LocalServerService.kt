@@ -42,18 +42,29 @@ class LocalServerService : Service() {
         if (intent?.action == ACTION_STOP) {
             scope.launch {
                 manager.stop()
+                LocalServerStateBus.set(LocalServerState.Stopped)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             return START_NOT_STICKY
         }
 
+        // 已经在跑了就别重复起（点第二次启动会走到这里，占不到端口就白等）
+        if (LocalServerStateBus.isUp()) {
+            updateNotification("已在运行")
+            return START_STICKY
+        }
+
         // 先占住前台位置，再做重活：不然在加载模型的几十秒里就可能被杀
         startForeground(NOTIFICATION_ID, buildNotification("正在加载模型…"))
+        LocalServerStateBus.set(LocalServerState.Starting(1))
 
         scope.launch {
-            val model = pickModel() ?: run {
-                updateNotification("没有可用的模型")
+            val model = pickModel()
+            if (model == null) {
+                val why = "没有可用模型"
+                LocalServerStateBus.set(LocalServerState.Failed(why))
+                updateNotification(why)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return@launch
@@ -67,10 +78,18 @@ class LocalServerService : Service() {
                 nCtx = LocalMemoryBudget.contextFor(this@LocalServerService),
                 nThreads = LocalMemoryBudget.threads(),
             )
+
+            // 状态写进总线：页面看的是同一份，不会再出现"服务好了页面不知道"
+            LocalServerStateBus.set(st)
             updateNotification(
                 if (st is LocalServerState.Running) "已就绪（端口 ${st.port}）"
                 else "启动失败：${(st as? LocalServerState.Failed)?.why ?: "未知"}"
             )
+
+            // 起来了就把它注册成 Mika 里可以直接选的模型
+            if (st is LocalServerState.Running) {
+                LocalProviderRegistrar.register(this@LocalServerService, model)
+            }
         }
         return START_STICKY
     }
@@ -80,13 +99,14 @@ class LocalServerService : Service() {
     override fun onDestroy() {
         // 服务没了一定要把子进程收掉，不然它变成孤儿白占几个 G 内存
         manager.stopNow()
+        LocalServerStateBus.set(LocalServerState.Stopped)
         super.onDestroy()
     }
 
     private fun pickModel(): LocalModelCatalog.Model? {
         val prefs = getSharedPreferences("local_model", Context.MODE_PRIVATE)
-        val id = prefs.getString("choice", null)?.let { LocalModelCatalog.byId(it) }
-        return id ?: LocalModelCatalog.recommend(LocalMemoryBudget.ramGb(this))
+        val saved = prefs.getString("choice", null)?.let { LocalModelCatalog.byId(it) }
+        return saved ?: LocalModelCatalog.recommend(LocalMemoryBudget.ramGb(this))
     }
 
     private fun ensureChannel() {
@@ -115,7 +135,9 @@ class LocalServerService : Service() {
     }
 
     private fun updateNotification(text: String) {
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
+        }
     }
 
     companion object {
