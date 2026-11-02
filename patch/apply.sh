@@ -248,6 +248,23 @@ else:
     print('  调用处已传 onOpenLocalModel')
 PYEOF
 
+# 注册启动钩子：App 一启动就去拉本机服务
+# （用 ContentProvider 而不是 androidx.startup，后者要加依赖）
+python3 - <<'PYEOF'
+p = 'app/src/main/AndroidManifest.xml'
+s = open(p, encoding='utf-8').read()
+prov = 'com.wangzan101.mika.local.LocalServerBoot'
+if prov in s:
+    print('  启动钩子已注册，跳过')
+else:
+    tag = '    <provider\n        android:name="%s"\n        android:authorities="${applicationId}.localboot"\n        android:exported="false" />\n' % prov
+    a = '    </application>'
+    assert a in s, 'Manifest 里没找到 </application>'
+    s = s.replace(a, tag + a, 1)
+    open(p, 'w', encoding='utf-8').write(s)
+    print('  启动钩子已注册')
+PYEOF
+
 # ── 4. 固定签名 ───────────────────────────────────────────────
 # Actions 每次是新 VM，AGP 自动生成的 debug.keystore 每次都换，
 # 签名不一致就装不上。所以自己造一把、提交回仓库复用。
