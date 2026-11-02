@@ -58,9 +58,28 @@ jobs:
             echo "tag: ${{ github.event.inputs.tag }}"
             echo "查询日期: $(date -u +%Y-%m-%d)"
             echo
-            echo '## 文件列表'
+            echo "压缩包体积: $(stat -c%s probe/android.tar.gz) 字节"
+            echo
+            echo '## 解包后各文件体积（降序）'
             echo '```'
-            tar tzf probe/android.tar.gz | sort
+            find probe/x -type f -printf '%s\t%P\n' | sort -rn
+            echo '```'
+            echo
+            echo '## 只带服务端所需文件的合计'
+            echo '```'
+            find probe/x -type f \( -name 'llama-server' -o -name 'libllama.so' -o -name 'libmtmd.so' -o -name 'libggml*.so' \) -printf '%s\t%P\n' | sort -rn
+            echo "---合计---"
+            find probe/x -type f \( -name 'llama-server' -o -name 'libllama.so' -o -name 'libmtmd.so' -o -name 'libggml*.so' \) -printf '%s\n' | paste -sd+ | bc
+            echo '```'
+            echo
+            echo '## 视觉/多模态证据'
+            echo '```'
+            echo "--- 文件名含 mtmd ---"
+            tar tzf probe/android.tar.gz | grep -iE 'mtmd' || echo "  （无）"
+            echo "--- llama-server 里的 mmproj 相关字符串 ---"
+            strings probe/x/llama-b12032/llama-server 2>/dev/null | grep -i 'mmproj' | sort -u | head -20 || echo "  （无）"
+            echo "--- libmtmd.so 导出符号（前 30）---"
+            strings probe/x/llama-b12032/libmtmd.so 2>/dev/null | grep -E '^mtmd_' | sort -u | head -30 || echo "  （无）"
             echo '```'
           } > probe-result/android-arm64-files.md
           git config user.name "probe"
