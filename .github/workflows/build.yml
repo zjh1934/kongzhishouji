@@ -32,14 +32,41 @@ jobs:
           echo "Mika HEAD: $(git rev-parse --short=7 HEAD)"
 
       - name: 应用补丁
+        id: apply
         if: github.event.inputs.mode == 'patch'
+        continue-on-error: true
         run: |
           if [ -f repo/patch/apply.sh ]; then
             cd mika
-            BUILD_NUMBER=${{ github.run_number }} bash ../repo/patch/apply.sh
+            set +e
+            BUILD_NUMBER=${{ github.run_number }} bash ../repo/patch/apply.sh 2>&1 | tee /tmp/apply.log
+            rc=${PIPESTATUS[0]}
+            set -e
+            echo "rc=$rc" >> $GITHUB_OUTPUT
+            exit $rc
           else
             echo "repo/patch/apply.sh 不存在，按原样构建"
+            echo "rc=0" >> $GITHUB_OUTPUT
           fi
+
+      - name: 补丁失败时把日志写回仓库
+        if: steps.apply.outputs.rc != '0'
+        run: |
+          mkdir -p repo/logs
+          {
+            echo "# 补丁失败 run ${{ github.run_number }}"
+            echo "日期: $(date -u +%Y-%m-%d)"
+            echo
+            echo '```'
+            tail -60 /tmp/apply.log
+            echo '```'
+          } > repo/logs/patch-${{ github.run_number }}.md
+          cd repo
+          git config user.name "builder"
+          git config user.email "builder@users.noreply.github.com"
+          git add -f logs
+          git diff --cached --quiet && echo "无变化" || (git commit -m "patch 失败日志 run ${{ github.run_number }}" && git push)
+          exit 1
 
       - name: JDK 17
         uses: actions/setup-java@v4
