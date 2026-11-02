@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -120,31 +121,37 @@ class LocalModelController(app: Context) {
         }
     }
 
-    /** 起本机服务。加载慢，界面上要一直有反馈。 */
+    /**
+     * 起本机服务。
+     *
+     * 走 [LocalServerService]（前台服务）而不是直接起子进程：
+     * Android 12+ 会杀没有前台服务保护的后台子进程，且是捕获不到的 SIGKILL。
+     * 界面这边只发个请求，真正的加载在后台做。
+     */
     fun start() {
-        val m = _current.value
+        _ui.value = _ui.value.copy(server = LocalServerState.Starting(1), message = null)
+        LocalServerService.start(ctx)
+        // 前台服务起来后要等它就绪，轮询一下告诉用户进展
         scope.launch {
-            _ui.value = _ui.value.copy(server = LocalServerState.Starting(1), message = null)
-            val st = server.start(
-                modelPath = store.pathOf(m.main),
-                mmprojPath = store.pathOf(m.mmproj),
-                // 截图很吃上下文：一张手机截图动辄上千 token，
-                // 4096 只够两三轮就顶到头，所以给 8192。
-                nCtx = 8192,
-                nThreads = (Runtime.getRuntime().availableProcessors() - 1).coerceIn(2, 8),
-            )
+            repeat(120) {
+                delay(1000)
+                if (server.probe(LocalServerManager.DEFAULT_PORT)) {
+                    _ui.value = _ui.value.copy(
+                        server = LocalServerState.Running(LocalServerManager.DEFAULT_PORT),
+                        message = "已就绪",
+                    )
+                    return@launch
+                }
+            }
             _ui.value = _ui.value.copy(
-                server = st,
-                message = if (st is LocalServerState.Running) "已就绪" else (st as? LocalServerState.Failed)?.why,
+                server = LocalServerState.Failed("等了 2 分钟还没起来，看通知栏有没有报错"),
             )
         }
     }
 
     fun stop() {
-        scope.launch {
-            server.stop()
-            _ui.value = _ui.value.copy(server = LocalServerState.Stopped, message = "已停止")
-        }
+        LocalServerService.stop(ctx)
+        _ui.value = _ui.value.copy(server = LocalServerState.Stopped, message = "已停止")
     }
 
     fun delete() {
