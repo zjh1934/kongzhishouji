@@ -19,19 +19,18 @@ import java.io.FileOutputStream
 data class LocalModelUi(
     val downloading: Boolean = false,
     val progress: DownloadProgress? = null,
-    /** 两个文件都在才算装好。 */
+    /** 当前选中的模型两个文件都在。 */
     val ready: Boolean = false,
     val server: LocalServerState = LocalServerState.Stopped,
-    val availableBytes: Long = 0L,
     val message: String? = null,
     val importing: Boolean = false,
 )
 
 /**
- * 本机模型的下载、导入、启停。
+ * 本机模型的下载、导入、启停，以及"用哪个模型"。
  *
  * 不做成 `ViewModel` + `viewModel()`：Mika 自己没引 `lifecycle-viewmodel-compose`，
- * 它是直接构造 ViewModel 的（见 `MainActivity` 里的 `MemoryViewModel(...)`）。
+ * 它是直接构造的（见 `MainActivity` 里的 `MemoryViewModel(...)`）。
  * 跟着它的做法走，就不用给工程加依赖 —— 少动一处 build.gradle，升级时少一处冲突。
  *
  * 生命周期由页面用 `DisposableEffect` 收尾（[close]）。
@@ -39,6 +38,7 @@ data class LocalModelUi(
 class LocalModelController(app: Context) {
 
     private val ctx = app.applicationContext
+    private val prefs = ctx.getSharedPreferences("local_model", Context.MODE_PRIVATE)
     private val store = LocalModelStore(File(ctx.getExternalFilesDir(null), "models"))
     private val downloader = LocalModelDownloader()
     private val server = LocalServerManager(ctx)
@@ -47,22 +47,36 @@ class LocalModelController(app: Context) {
     private val _ui = MutableStateFlow(LocalModelUi())
     val ui: StateFlow<LocalModelUi> = _ui.asStateFlow()
 
-    /** 按机身内存挑模型；内存不够为 null。 */
-    val model: LocalModelCatalog.Model? = LocalModelCatalog.recommend(ramGb())
+    private val _current = MutableStateFlow(loadChoice())
+    val current: StateFlow<LocalModelCatalog.Model> = _current.asStateFlow()
 
     init { refresh() }
 
+    /** 换模型。正在跑的服务要停掉 —— 换模型还占着旧权重没意义。 */
+    fun select(model: LocalModelCatalog.Model) {
+        if (model.id == _current.value.id) return
+        scope.launch {
+            server.stop()
+            prefs.edit().putString(KEY_CHOICE, model.id).apply()
+            _current.value = model
+            _ui.value = LocalModelUi(server = LocalServerState.Stopped)
+            refresh()
+        }
+    }
+
+    private fun loadChoice(): LocalModelCatalog.Model {
+        val saved = prefs.getString(KEY_CHOICE, null)?.let { LocalModelCatalog.byId(it) }
+        // 没存过就按机身内存挑一个
+        return saved ?: LocalModelCatalog.recommend(ramGb()) ?: LocalModelCatalog.DEFAULT
+    }
+
     fun refresh() {
-        val m = model
-        _ui.value = _ui.value.copy(
-            ready = m?.let { store.isModelReady(it) } ?: false,
-            availableBytes = store.availableBytes(),
-        )
+        _ui.value = _ui.value.copy(ready = store.isModelReady(_current.value))
     }
 
     /** App 内下载。支持断点续传，主源失败自动换备选源。 */
     fun download() {
-        val m = model ?: return
+        val m = _current.value
         scope.launch {
             _ui.value = _ui.value.copy(downloading = true, message = null)
             when (val r = downloader.download(store, m) { p ->
@@ -82,11 +96,11 @@ class LocalModelController(app: Context) {
     /**
      * 导入外部下好的文件（[which]：0 主模型，1 视觉投影）。
      *
-     * 3 GB 在 App 内下不一定顺，用户可能用别的工具下或在电脑上下好传过来。
+     * 几个 G 在 App 内下不一定顺，用户可能用别的工具下或在电脑上下好传过来。
      * 收进来先校验，对不上就不留 —— 免得下错文件到运行时才发现。
      */
     fun import(uri: Uri, which: Int) {
-        val m = model ?: return
+        val m = _current.value
         val file = m.files.getOrNull(which) ?: return
         scope.launch {
             _ui.value = _ui.value.copy(importing = true, message = null)
@@ -100,23 +114,22 @@ class LocalModelController(app: Context) {
                 message = when {
                     !copied -> "读不到这个文件"
                     !ok -> "文件对不上（不完整或不是这个文件），已丢弃"
-                    else -> "导入成功"
+                    else -> "导入成功",
                 },
             )
         }
     }
 
-    /** 起本机服务。4B 视觉模型加载慢，界面上要一直有反馈。 */
+    /** 起本机服务。加载慢，界面上要一直有反馈。 */
     fun start() {
-        val m = model ?: return
+        val m = _current.value
         scope.launch {
             _ui.value = _ui.value.copy(server = LocalServerState.Starting(1), message = null)
             val st = server.start(
                 modelPath = store.pathOf(m.main),
                 mmprojPath = store.pathOf(m.mmproj),
-                // 截图很吃上下文：Qwen3-VL 一张手机截图动辄上千 token，
-                // 4096 只够两三轮对话就顶到头，所以给 8192。
-                // 再大就要看内存了（KV cache 跟着涨），先按 4B 的稳妥值来。
+                // 截图很吃上下文：一张手机截图动辄上千 token，
+                // 4096 只够两三轮就顶到头，所以给 8192。
                 nCtx = 8192,
                 nThreads = (Runtime.getRuntime().availableProcessors() - 1).coerceIn(2, 8),
             )
@@ -135,7 +148,7 @@ class LocalModelController(app: Context) {
     }
 
     fun delete() {
-        val m = model ?: return
+        val m = _current.value
         scope.launch {
             server.stop()
             withContext(Dispatchers.IO) { store.delete(m) }
@@ -164,4 +177,6 @@ class LocalModelController(app: Context) {
         (ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(mi)
         return (mi.totalMem / (1024 * 1024 * 1024)).toInt()
     }
+
+    private companion object { const val KEY_CHOICE = "choice" }
 }
