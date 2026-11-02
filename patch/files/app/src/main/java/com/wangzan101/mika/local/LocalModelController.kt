@@ -100,7 +100,7 @@ class LocalModelController(app: Context) {
                 message = when {
                     !copied -> "读不到这个文件"
                     !ok -> "文件对不上（不完整或不是这个文件），已丢弃"
-                    else -> "导入成功",
+                    else -> "导入成功"
                 },
             )
         }
