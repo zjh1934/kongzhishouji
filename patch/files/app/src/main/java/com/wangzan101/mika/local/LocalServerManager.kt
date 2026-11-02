@@ -70,6 +70,11 @@ class LocalServerManager(private val app: Context) {
                 add("--port"); add(usePort.toString())
                 add("-c"); add(nCtx.toString())
                 add("-t"); add(nThreads.toString())
+                // ⚠️ 必需：启用 Jinja chat template，OpenAI 兼容端点才支持 tools /
+                // function calling。Mika 每次请求都带 `tools` 数组，缺了这个参数
+                // 那坨 JSON schema 要么被忽略、要么被当普通文本塞进 prompt。
+                // llama.cpp 官方与多模态部署文档都把 --jinja 列为必需启动项。
+                add("--jinja")
                 // 只开接口，不加载网页界面（省资源）
                 add("--no-webui")
             }
