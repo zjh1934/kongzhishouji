@@ -51,6 +51,10 @@ object BackendSwitch {
     private fun toLocal(ctx: Context) {
         val store = ProviderStore.get(ctx)
         _hint.value = null
+        // 显式开开关，不依赖 save() 的副作用：
+        // `use()` 只在配置不存在时才调 save()，第二次切换就不经过它了；
+        // 冷启动后 roles 从磁盘恢复，更是一次 save 都没有。
+        LocalMode.enable()
 
         // 记住当前云端主模型（只记非本地的，避免反复切换把自己覆盖掉）
         val curId = store.roles.value.resolve(ModelRole.Main)
@@ -90,6 +94,8 @@ object BackendSwitch {
     private fun toCloud(ctx: Context) {
         val store = ProviderStore.get(ctx)
         _hint.value = null
+        // 云端必须用回原版完整提示词，不能留着精简版
+        LocalMode.disable()
         val pid = cloudProviderId
         val name = cloudModelName
         val caps = cloudCaps
