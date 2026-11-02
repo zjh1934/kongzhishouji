@@ -162,8 +162,8 @@ class LocalModelDownloader {
             val total = when {
                 resumed -> r.header("Content-Range")
                     ?.substringAfterLast("/")?.toLongOrNull()
-                    ?: (start + body.contentLength()).coerceAtLeast(file.sizeUpperBound)
-                else -> body.contentLength().takeIf { it > 0 } ?: file.sizeUpperBound
+                    ?: (start + body.contentLength()).coerceAtLeast(file.size)
+                else -> body.contentLength().takeIf { it > 0 } ?: file.size
             }
 
             return try {
@@ -203,9 +203,11 @@ class LocalModelDownloader {
         file: LocalModelCatalog.File,
         source: Int,
     ): String? {
-        if (source == 1) return LocalModelSources.mirror(model.hfRepo, file.name)
+        val ms = model.msRepo
+        // 魔搭上没有这个模型(GUI-Owl / MAI-UI 只有 HF 上有量化版),直接走镜像源
+        if (source == 1 || ms == null) return LocalModelSources.mirror(model.hfRepo, file.name)
         // 主源每次都重新问:直链 10-15 分钟过期,缓存了必然在下大文件中途失效
-        val q = LocalModelSources.modelScopeQuery(model.msRepo, file.name)
+        val q = LocalModelSources.modelScopeQuery(ms, file.name)
         return try {
             http.newCall(Request.Builder().url(q).build()).execute().use { r ->
                 val body = r.body?.string().orEmpty()
