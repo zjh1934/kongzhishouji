@@ -34,21 +34,24 @@ jobs:
 
       - name: strip 全部 so（用 llvm-strip）
         run: |
+          set +e
           cd probe
           mkdir -p stripped
           SRC="x/llama-b12032"
-          STRIP=$(which llvm-strip)
-          [ -z "$STRIP" ] && { sudo apt-get update -qq; sudo apt-get install -y -qq binutils-aarch64-linux-gnu; STRIP=aarch64-linux-gnu-strip; }
+          ls "$SRC" | head -5
+          sudo apt-get update -qq >/dev/null 2>&1
+          sudo apt-get install -y -qq llvm binutils-aarch64-linux-gnu >/dev/null 2>&1
+          STRIP=$(which llvm-strip || which aarch64-linux-gnu-strip || which strip)
           echo "用: $STRIP"
-          ls "$SRC" | head -50
           for f in "$SRC"/*.so; do
             n=$(basename "$f")
             cp "$f" "stripped/$n"
-            "$STRIP" --strip-unneeded "stripped/$n" 2>&1 | head -2 || true
+            "$STRIP" --strip-unneeded "stripped/$n" 2>&1 | head -1
           done
           cp "$SRC/llama-server" stripped/llama-server
-          "$STRIP" --strip-unneeded stripped/llama-server 2>&1 | head -2 || true
-          echo "--- strip 完成 ---"
+          "$STRIP" --strip-unneeded stripped/llama-server 2>&1 | head -1
+          echo "--- 结果 ---"
+          ls -la stripped | head -25
 
       - name: 体积对比表
         run: |
