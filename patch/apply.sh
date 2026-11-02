@@ -288,6 +288,7 @@ PYEOF
 # （写成独立 .py 而不是 heredoc —— 嵌套转义层数太多，刚才就写错过一次）
 echo "== 本地模式补丁 =="
 python3 "${PATCH_HOME}/scripts/patch_local_mode.py"
+python3 "${PATCH_HOME}/scripts/patch_chat_switch.py"
 
 # ── 4. 固定签名 ───────────────────────────────────────────────
 # Actions 每次是新 VM，AGP 自动生成的 debug.keystore 每次都换，
