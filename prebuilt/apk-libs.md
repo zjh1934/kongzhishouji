@@ -1,6 +1,6 @@
-# 本次构建的 APK 内容（run 22, 2026-11-02）
+# 本次构建的 APK 内容（run 23, 2026-11-02）
 
-APK 体积: 104669198 字节
+APK 体积: 104669205 字节
 
 ## lib/ 下的原生库
 ```
@@ -28,7 +28,7 @@ APK 体积: 104669198 字节
 ```
 ## APK 自检
 
-体积: 104669198 字节
+体积: 104669205 字节
 
 ### zip 完整性
 ```
@@ -40,21 +40,24 @@ No errors detected in compressed data of app-debug.apk.
 
 ### aapt 能否解析（packageInfo 就是这里出的）
 ```
-ERROR: Unknown command '/usr/local/lib/android/sdk/build-tools/35.0.0/aapt'
-Android Asset Packaging Tool
-
-Usage:
- aapt l[ist] [-v] [-a] file.{zip,jar,apk}
-   List contents of Zip-compatible archive.
-
- aapt d[ump] [--values] [--include-meta-data] WHAT file.{apk} [asset [asset ...]]
-   strings          Print the contents of the resource table string pool in the APK.
-   badging          Print the label and icon for the app declared in APK.
-   permissions      Print the permissions from the APK.
-   resources        Print the resource table from the APK.
+package: name='com.kongzhishouji.mika' versionCode='57' versionName='0.1.33' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
+sdkVersion:'30'
+targetSdkVersion:'35'
+uses-permission: name='android.permission.INTERNET'
+uses-permission: name='android.permission.RECORD_AUDIO'
+uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'
+uses-permission: name='android.permission.ACCESS_NETWORK_STATE'
+uses-permission: name='android.permission.FOREGROUND_SERVICE'
+uses-permission: name='android.permission.FOREGROUND_SERVICE_SPECIAL_USE'
+uses-permission: name='android.permission.FOREGROUND_SERVICE_DATA_SYNC'
+uses-permission: name='android.permission.POST_NOTIFICATIONS'
+uses-permission: name='android.permission.WAKE_LOCK'
 ```
 
 ### 签名是否完整
 ```
-Unsupported command: /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner. See --help for supported commands
+V2 Signer: certificate DN: CN=Mika Local, OU=Dev, O=KongZhiShouJi, C=CN
+V2 Signer: certificate SHA-256 digest: a6d5ad1a94c642a5a8cf7dbff1611eb35b44740252b2599105b3684cb45d41e0
+V2 Signer: certificate SHA-1 digest: 7195889f3c861d6e800b790e173250fcc147fd4b
+V2 Signer: certificate MD5 digest: 3e421c402d72662ab098509c5bf98299
 ```
