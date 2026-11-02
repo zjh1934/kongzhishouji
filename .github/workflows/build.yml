@@ -71,6 +71,14 @@ jobs:
               | head -60
             echo '```'
             echo
+            echo
+            echo '## 诊断：SettingsScreen 签名与 onOpenLocalModel 出现次数'
+            echo '```'
+            echo "count=$(grep -c onOpenLocalModel app/src/main/java/com/wangzan101/mika/ui/SettingsScreen.kt)"
+            sed -n '/^fun SettingsScreen(/,/^) {/p' app/src/main/java/com/wangzan101/mika/ui/SettingsScreen.kt
+            echo '--- 310 行附近 ---'
+            sed -n '305,320p' app/src/main/java/com/wangzan101/mika/ui/SettingsScreen.kt
+            echo '```'
             echo '## 最后 200 行'
             echo '```'
             tail -200 /tmp/gradle.log
