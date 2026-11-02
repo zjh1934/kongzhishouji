@@ -1,7 +1,6 @@
 name: Probe
 
-# 纯粹当"眼睛"用：沙盒访问不到 github.com，但 Actions 可以。
-# 用来看 llama.cpp 官方 android-arm64 预编译包里到底有什么。
+# 沙盒访问不到 github.com，用 CI 当眼睛。
 on:
   workflow_dispatch:
     inputs:
@@ -16,73 +15,97 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
-      - name: 下载 android-arm64 预编译包
+      - name: 下载并解包
         run: |
           mkdir -p probe && cd probe
           curl -sSL -o android.tar.gz \
             "https://github.com/ggml-org/llama.cpp/releases/download/${{ github.event.inputs.tag }}/llama-${{ github.event.inputs.tag }}-bin-android-arm64.tar.gz"
-          ls -la android.tar.gz
-          file android.tar.gz
-
-      - name: 列出包内文件
-        run: |
-          cd probe
-          echo "=== 全部条目 ===" 
-          tar tzf android.tar.gz | sort
-          echo
-          echo "=== 体积（解出来看）==="
           mkdir -p x && tar xzf android.tar.gz -C x
-          find x -type f -printf '%s\t%p\n' | sort -rn | head -40
+          echo "解包完成"
 
-      - name: 查视觉/多模态支持
+      - name: 是否已经 strip + 文件类型
         run: |
-          cd probe
-          echo "=== 含 mtmd / mmproj 的文件 ==="
-          tar tzf android.tar.gz | grep -iE 'mtmd|mmproj|vision' || echo "  （文件名里没有）"
-          echo
-          echo "=== 在二进制里搜 mmproj / mtmd 字符串 ==="
-          for f in $(find x -type f -name 'llama-server' -o -type f -name 'llama-cli' -o -type f -name 'libmtmd*'); do
+          cd probe/x/llama-b12032
+          for f in llama-server libllama.so libmtmd.so libggml.so libggml-base.so libllama-server-impl.so libllama-common.so; do
             echo "--- $f ---"
-            strings "$f" 2>/dev/null | grep -iE '^\-\-mmproj|--mmproj|mmproj' | sort -u | head -10 || true
+            file "$f" 2>/dev/null | cut -c1-200
           done
 
-      - name: 把清单写回仓库
+      - name: strip 后体积对比（服务端最小集）
+        run: |
+          cd probe/x/llama-b12032
+          mkdir -p ../stripped
+          NEEDED="llama-server libllama-server-impl.so libllama-common.so libllama.so libmtmd.so libggml.so libggml-base.so libggml-rpc.so"
+          NEEDED="$NEEDED libggml-cpu-android_armv8.0_1.so libggml-cpu-android_armv8.2_1.so libggml-cpu-android_armv8.2_2.so"
+          NEEDED="$NEEDED libggml-cpu-android_armv8.6_1.so libggml-cpu-android_armv9.0_1.so libggml-cpu-android_armv9.2_1.so libggml-cpu-android_armv9.2_2.so"
+          echo "| 文件 | 原始 | strip 后 |"
+          echo "|---|---:|---:|"
+          TOT_A=0; TOT_B=0
+          for f in $NEEDED; do
+            [ -f "$f" ] || continue
+            a=$(stat -c%s "$f")
+            cp "$f" "../stripped/$f"
+            strip --strip-unneeded "../stripped/$f" 2>/dev/null || echo "  (strip 失败: $f)"
+            b=$(stat -c%s "../stripped/$f")
+            TOT_A=$((TOT_A+a)); TOT_B=$((TOT_B+b))
+            echo "| $f | $a | $b |"
+          done
+          echo "合计: 原始 $TOT_A -> strip 后 $TOT_B"
+          echo "$TOT_A" > ../tot_a.txt
+          echo "$TOT_B" > ../tot_b.txt
+
+      - name: 试试 qemu 跑一下（能不能真的执行）
+        run: |
+          set +e
+          sudo apt-get update -qq >/dev/null 2>&1
+          sudo apt-get install -y -qq qemu-user-static >/dev/null 2>&1
+          cd probe/x/llama-b12032
+          echo "=== qemu-aarch64 可用性 ==="
+          which qemu-aarch64-static qemu-aarch64 2>/dev/null || echo "  （没装到 qemu）"
+          Q=$(which qemu-aarch64-static || which qemu-aarch64)
+          if [ -n "$Q" ]; then
+            echo "=== llama-server --help ==="
+            LD_LIBRARY_PATH=. timeout 60 "$Q" ./llama-server --help 2>&1 | head -30
+            echo "=== 退出码: $? ==="
+          fi
+
+      - name: 结果写回仓库
         run: |
           mkdir -p probe-result
+          cd probe
           {
-            echo "# llama.cpp android-arm64 预编译包清单"
-            echo "tag: ${{ github.event.inputs.tag }}"
+            echo "# llama.cpp android-arm64 打包可行性（tag ${{ github.event.inputs.tag }}）"
             echo "查询日期: $(date -u +%Y-%m-%d)"
             echo
-            echo "压缩包体积: $(stat -c%s probe/android.tar.gz) 字节"
+            echo "## 体积：原始 vs strip"
             echo
-            echo '## 解包后各文件体积（降序）'
-            echo '```'
-            find probe/x -type f -printf '%s\t%P\n' | sort -rn
-            echo '```'
+            echo "| 文件 | 原始 | strip 后 |"
+            echo "|---|---:|---:|"
+            NEEDED="llama-server libllama-server-impl.so libllama-common.so libllama.so libmtmd.so libggml.so libggml-base.so libggml-rpc.so"
+            NEEDED="$NEEDED libggml-cpu-android_armv8.0_1.so libggml-cpu-android_armv8.2_1.so libggml-cpu-android_armv8.2_2.so"
+            NEEDED="$NEEDED libggml-cpu-android_armv8.6_1.so libggml-cpu-android_armv9.0_1.so libggml-cpu-android_armv9.2_1.so libggml-cpu-android_armv9.2_2.so"
+            for f in $NEEDED; do
+              [ -f "x/llama-b12032/$f" ] || continue
+              a=$(stat -c%s "x/llama-b12032/$f")
+              b=$(stat -c%s "stripped/$f" 2>/dev/null || echo 0)
+              echo "| $f | $a | $b |"
+            done
             echo
-            echo '## 只带服务端所需文件的合计'
-            echo '```'
-            find probe/x -type f \( -name 'llama-server' -o -name 'libllama.so' -o -name 'libmtmd.so' -o -name 'libggml*.so' \) -printf '%s\t%P\n' | sort -rn
-            echo "---合计---"
-            find probe/x -type f \( -name 'llama-server' -o -name 'libllama.so' -o -name 'libmtmd.so' -o -name 'libggml*.so' \) -printf '%s\n' | paste -sd+ | bc
-            echo '```'
+            echo "**合计：原始 $(cat tot_a.txt 2>/dev/null) → strip 后 $(cat tot_b.txt 2>/dev/null)**"
             echo
-            echo '## 视觉/多模态证据'
+            echo "## 文件类型"
             echo '```'
-            echo "--- 文件名含 mtmd ---"
-            tar tzf probe/android.tar.gz | grep -iE 'mtmd' || echo "  （无）"
-            echo "--- llama-server 里的 mmproj 相关字符串 ---"
-            strings probe/x/llama-b12032/llama-server 2>/dev/null | grep -i 'mmproj' | sort -u | head -20 || echo "  （无）"
-            echo "--- libmtmd.so 导出符号（前 30）---"
-            strings probe/x/llama-b12032/libmtmd.so 2>/dev/null | grep -E '^mtmd_' | sort -u | head -30 || echo "  （无）"
+            for f in llama-server libllama.so libmtmd.so; do
+              echo "--- $f ---"; file "x/llama-b12032/$f" 2>/dev/null | cut -c1-200
+            done
             echo '```'
-          } > probe-result/android-arm64-files.md
+          } > ../probe-result/packaging.md
+          cd ..
           git config user.name "probe"
           git config user.email "probe@users.noreply.github.com"
           git add -f probe-result
-          git diff --cached --quiet && echo "无变化" || git commit -m "probe: android-arm64 清单 ${{ github.event.inputs.tag }}" && git push
+          git diff --cached --quiet && echo "无变化" || (git commit -m "probe: 打包可行性 ${{ github.event.inputs.tag }}" && git push)
