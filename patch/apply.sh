@@ -183,8 +183,12 @@ else:
 PY
 
 # 设置页入口：在「模型」那张卡片里加一行
-# 坑：那行 ListRow 是多行的（结尾带 lambda），不能"插在它后面"，
-# 会插进 lambda 体内。改成"插在它前面 + 去掉它原来的 first = true"。
+#
+# 教训（已经踩过两次，别再改回去）：
+# 1. 那行 ListRow 是多行的（结尾带 lambda），不能"插在它后面"，会插进 lambda 体内
+# 2. 那行**不在** `SettingsScreen` 里，而在 `SettingsContent` 里 ——
+#    SettingsScreen 只是个壳，按页面状态分派给 SettingsContent。
+#    所以参数要加到 SettingsContent，再从 SettingsScreen 透传下去
 python3 - <<'PYEOF'
 import re
 p = 'app/src/main/java/com/wangzan101/mika/ui/SettingsScreen.kt'
@@ -192,27 +196,45 @@ s = open(p, encoding='utf-8').read()
 if 'onOpenLocalModel' in s:
     print('  设置页入口已存在，跳过')
 else:
-    m2 = re.search(r'^(\s*)ListRow\(MikaIcons\.Spark, stringResource\(R\.string\.settings_model\).*$', s, re.M)
+    # 1) 找 SettingsContent 的签名
+    mc = re.search(r'^fun SettingsContent\(', s, re.M)
+    assert mc, 'SettingsContent 定义未找到'
+
+    # 2) 在它体内（不是全文件）找「模型」那一行
+    row = re.compile(r'^(\s*)ListRow\(MikaIcons\.Spark, stringResource\(R\.string\.settings_model\).*$', re.M)
+    m2 = row.search(s, mc.start())
     assert m2, '模型行未找到'
+
+    # 3) 插在它前面，并把它的 first = true 挪给新行
     indent = m2.group(1)
-    line = m2.group(0)
-    # 原行去掉 first = true，让新行当第一项
-    line2 = line.replace('first = true, ', '')
     s = s[:m2.start()] + (
         indent + 'ListRow(MikaIcons.Spark, "本机模型", "不联网，在手机上跑",\n'
         + indent + '    first = true, onClick = onOpenLocalModel) { RowChevron() }\n'
-        + line2
+        + m2.group(0).replace('first = true, ', '')
     ) + s[m2.end():]
-    m = re.search(r'^fun SettingsScreen\(', s, re.M)
-    assert m, 'SettingsScreen 定义未找到'
-    i = s.index('onBack: () -> Unit', m.start())
-    s = s[:i] + 'onOpenLocalModel: () -> Unit,\n    ' + s[i:]
+
+    # 4) SettingsContent 签名加参数（放在 onOpenModels 后面，跟着其它 onOpenX）
+    mc = re.search(r'^fun SettingsContent\(', s, re.M)
+    i = s.index('    onOpenModels: () -> Unit,', mc.start())
+    s = s[:i] + '    onOpenModels: () -> Unit,\n    onOpenLocalModel: () -> Unit,\n' + s[i + len('    onOpenModels: () -> Unit,\n'):]
+
+    # 5) SettingsScreen 签名也加一个，好从外面传进来
+    ms = re.search(r'^fun SettingsScreen\(', s, re.M)
+    j = s.index('    onOpenModels: () -> Unit,', ms.start())
+    s = s[:j] + '    onOpenModels: () -> Unit,\n    onOpenLocalModel: () -> Unit,\n' + s[j + len('    onOpenModels: () -> Unit,\n'):]
+
+    # 6) 调用处透传：SettingsContent(...) 里的 onOpenModels = onOpenModels
+    a = 'onOpenModels = onOpenModels,'
+    assert a in s, 'SettingsContent 调用处的 onOpenModels 未找到'
+    s = s.replace(a, a + '\n            onOpenLocalModel = onOpenLocalModel,', 1)
+
     open(p, 'w', encoding='utf-8').write(s)
-    assert s.count('onOpenLocalModel') == 2, '入口数不对'
-    print('  设置页已加入口')
+    # 4 处：两个签名各一个参数、调用处一行里出现两次、使用处一个
+    assert s.count('onOpenLocalModel') == 5, '入口数不对: %d' % s.count('onOpenLocalModel')
+    print('  设置页已加入口（SettingsScreen -> SettingsContent 透传）')
 PYEOF
 
-# 调用处传参（SettingsScreen 的实参）
+# MainActivity 里 SettingsScreen(...) 的实参
 python3 - <<'PYEOF'
 p = 'app/src/main/java/com/wangzan101/mika/ui/MainActivity.kt'
 s = open(p, encoding='utf-8').read()
