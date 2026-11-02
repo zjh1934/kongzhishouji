@@ -44,9 +44,22 @@ object LocalProviderRegistrar {
                     com.wangzan101.mika.core.model.ListedModel(
                         id = MODEL_ID,
                         displayName = model.displayName,
-                        // 这几个能力要照实说，Mika 会按它决定要不要发图、要不要发 tools
+                        // 这几个能力要照实说，Mika 会按它决定要不要发图、要不要发 tools。
+                        //
+                        // ⚠️ vision 必须是 false。见 research/模型调用链路对照.md：
+                        // OpenAiCompatModel.serialize():164 是
+                        //   hasImage = rest.any { it is Part.Image } && capabilities.vision
+                        // 打开它，Mika 就把截图编码成 base64 `image_url` 发过来；
+                        // llama-server 带 --mmproj 要先跑视觉塔 + 上千视觉 token 的 prefill，
+                        // CPU 上 prefill 没完之前一个 SSE delta 都不发 →
+                        // OkHttp 120s 读超时 × RetryPolicy 3 次 = 挂 6 分钟、0 Token。
+                        //
+                        // PokeClaw 的本地链路根本不发图片：屏幕是文本控件树
+                        // `[n1] "text" [flags] (x,y)`，靠 sendMessage(singleText())。
+                        // Mika 本来就有 phone_observe 返回完整无障碍树 + OCR 文字，
+                        // 不发图照样能定位元素。视觉能力留到第二阶段再上。
                         toolCalls = true,
-                        vision = true,
+                        vision = false,
                         chat = true,
                         contextTokens = LocalMemoryBudget.contextFor(ctx),
                     )
