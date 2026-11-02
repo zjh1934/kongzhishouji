@@ -92,7 +92,7 @@ fun LocalModelScreen(onBack: () -> Unit) {
         GroupCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("获取模型", fontWeight = FontWeight.SemiBold)
-                FooterNote("两个文件都要有：主模型和视觉投影（缺了就看不见屏幕）。")
+                FooterNote("两个文件都要下。当前本地模式靠无障碍树 + OCR 文字看屏，暂不把截图发给模型；视觉投影先留着，第二阶段上视觉能力时用。")
                 MikaButton(
                     text = if (ui.ready) "已下载"
                            else if (ui.downloading) "下载中…"
@@ -132,6 +132,17 @@ fun LocalModelScreen(onBack: () -> Unit) {
                         MikaButton("正在启动…", {}, Modifier.fillMaxWidth(), enabled = false)
                     else ->
                         MikaButton("启动", vm::start, Modifier.fillMaxWidth(), enabled = ui.ready)
+                }
+                // 诊断用：不带图、不带工具，只问一句话。
+                // 秒回 ⇒ 服务没问题，是 Mika 的请求体把它卡住；也卡 ⇒ 看进程输出。
+                MikaButton(
+                    text = "测试一句话（诊断）",
+                    onClick = vm::probe,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = ui.server is LocalServerState.Running,
+                )
+                if (ui.server is LocalServerState.Running) {
+                    FooterNote("如果这里秒回、但聊天框里卡住，就是请求体里的图片或工具定义有问题。")
                 }
                 if (ui.ready) MikaButton("删除模型", vm::delete, Modifier.fillMaxWidth())
             }
