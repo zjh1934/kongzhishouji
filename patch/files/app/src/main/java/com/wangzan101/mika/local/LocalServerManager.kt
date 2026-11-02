@@ -3,6 +3,7 @@ package com.wangzan101.mika.local
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -108,6 +109,27 @@ class LocalServerManager(private val app: Context) {
         } catch (e: Exception) {
             // 已经死了，忽略
         }
+    }
+
+    /**
+     * 开个子线程启动，不等它就绪。
+     *
+     * 给 App 启动时用：加载 4B 视觉模型要二三十秒，
+     * 在主线程等会把 App 卡死。起完就完，成败由界面那边轮询得知。
+     */
+    fun startAsync(modelPath: String, mmprojPath: String?) {
+        Thread {
+            runCatching {
+                runBlocking {
+                    start(
+                        modelPath = modelPath,
+                        mmprojPath = mmprojPath,
+                        nCtx = 8192,
+                        nThreads = (Runtime.getRuntime().availableProcessors() - 1).coerceIn(2, 8),
+                    )
+                }
+            }
+        }.start()
     }
 
     /**
