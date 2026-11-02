@@ -6,37 +6,19 @@ import android.database.Cursor
 import android.net.Uri
 
 /**
- * App 一启动就去把本机服务拉起来。
+ * 保留这个 ContentProvider 的注册位，但**不再自动加载模型**。
  *
- * 为什么要这个：服务预设只是让 Mika 去连 `127.0.0.1:8080`，
- * 但那个端口上的 llama-server 得有人去启动。不自动起的话，
- * 用户选了「本机模型」却连不上，会很困惑。
+ * 原来这里一开 App 就把几个 G 的模型拉起来 —— 哪怕用户正在用云端。
+ * 需求定的是「云端 / 本地两条路真分开」，所以改成由
+ * [BackendSwitch]（聊天框里切到本地）来驱动启停，切走就卸掉。
  *
- * 为什么是个空的 ContentProvider：
- * **ContentProvider 是安卓里唯一"不用改 Application 类就能在启动时自动跑"的钩子** ——
- * 系统建进程时会主动实例化它。这是各家 SDK（Firebase、Facebook）的老办法，
- * 好处是**不用给工程加 androidx.startup 依赖**：加依赖 = 改 build.gradle
- * = 升级时多一处冲突。Mika 本身没有 startup 依赖，我们也不该为这点事加一个。
- *
- * 只是**发个请求**让它起来，不阻塞启动：加载 4B 视觉模型要二三十秒，
- * 在主线程等会把 App 卡死。真正的活由 [LocalServerService] 在前台服务里做。
+ * 保留空壳是因为 Manifest 里已经注册了，删注册又要多改一处；
+ * 留着不干活，将来要加启动时的轻量检查（比如扫孤儿进程）也有个落点。
  */
 class LocalServerBoot : ContentProvider() {
 
-    override fun onCreate(): Boolean {
-        val app = context?.applicationContext ?: return false
-        Thread {
-            runCatching {
-                val prefs = app.getSharedPreferences("local_model", android.content.Context.MODE_PRIVATE)
-                // 用户从没选过（也没下过模型）就别白费劲
-                if (prefs.getString("choice", null) == null) return@Thread
-                LocalServerService.start(app)
-            }
-        }.start()
-        return false
-    }
+    override fun onCreate(): Boolean = false
 
-    // 下面这些用不到，它只是借 ContentProvider 的时机跑一下 onCreate
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
     override fun getType(uri: Uri): String? = null
     override fun insert(uri: Uri, values: ContentValues?): Uri? = null
