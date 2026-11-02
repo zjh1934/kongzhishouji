@@ -134,6 +134,18 @@ jobs:
             echo '```'
           } > repo/prebuilt/apk-libs.md
 
+      - name: 上传 APK 到 Release（绕开 git 单文件 100 MiB 上限）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd repo
+          # git 的 pre-receive hook 拒收 >100 MiB 的 blob；Release 附件上限 2 GB。
+          # 固定用 latest 这个 tag，--clobber 覆盖，用户下载链接永久不变。
+          gh release view latest >/dev/null 2>&1 || \
+            gh release create latest --title "最新构建" --notes "CI 自动构建，每次覆盖" --prerelease
+          gh release upload latest prebuilt/app-debug.apk --clobber
+          echo "下载：https://github.com/${{ github.repository }}/releases/download/latest/app-debug.apk"
+
       - name: APK 自检（防止用户装到坏包）
         run: |
           # build-tools 可能有多个版本，通配符会展开成多个路径被当成参数，这里只取一个
@@ -173,7 +185,9 @@ jobs:
           git config user.email "builder@users.noreply.github.com"
           : > /tmp/pub.log
           set +e
-          git add -f prebuilt keystore.jks 2>&1 | tee -a /tmp/pub.log
+          # ⚠️ 不要 add prebuilt/app-debug.apk：它 >100 MiB 会被 GitHub 拒收。
+          # APK 走上面的 Release 附件，这里只提交小文件。
+          git add -f prebuilt/apk-libs.md keystore.jks 2>&1 | tee -a /tmp/pub.log
           if git diff --cached --quiet; then
             echo "产物无变化，跳过提交" | tee -a /tmp/pub.log
             echo "rc=0" >> $GITHUB_OUTPUT
