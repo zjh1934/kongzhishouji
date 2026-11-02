@@ -136,6 +136,8 @@ jobs:
 
       - name: APK 自检（防止用户装到坏包）
         run: |
+          # build-tools 可能有多个版本，通配符会展开成多个路径被当成参数，这里只取一个
+          BT=$(ls -d ${ANDROID_HOME}/build-tools/*/ | tail -1)
           cd repo/prebuilt
           APK=app-debug.apk
           {
@@ -151,12 +153,12 @@ jobs:
             echo
             echo "### aapt 能否解析（packageInfo 就是这里出的）"
             echo '```'
-            ${ANDROID_HOME}/build-tools/*/aapt dump badging "$APK" 2>&1 | head -12
+            "$BT/aapt" dump badging "$APK" 2>&1 | head -12
             echo '```'
             echo
             echo "### 签名是否完整"
             echo '```'
-            ${ANDROID_HOME}/build-tools/*/apksigner verify --print-certs "$APK" 2>&1 | head -10
+            "$BT/apksigner" verify --print-certs "$APK" 2>&1 | head -10
             echo '```'
           } >> apk-libs.md
           echo "--- 自检结果 ---"
