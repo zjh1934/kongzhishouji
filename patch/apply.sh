@@ -183,47 +183,30 @@ else:
 PY
 
 # 设置页入口：在「模型」那一行下面加一行
-python3 - <<'PY'
+# 注意插入顺序：先插位置靠后的（列表行），再插位置靠前的（函数参数）。
+# 反了会因为字符串变长导致索引错位，插进半句话中间。
+python3 - <<'PYEOF'
 import re
 p = 'app/src/main/java/com/wangzan101/mika/ui/SettingsScreen.kt'
 s = open(p, encoding='utf-8').read()
 if 'onOpenLocalModel' in s:
     print('  设置页入口已存在，跳过')
 else:
-    # 1) 签名加参数
+    m2 = re.search(r'^(\s*)ListRow\(MikaIcons\.Spark, stringResource\(R\.string\.settings_model\).*$', s, re.M)
+    assert m2, '模型行未找到'
+    indent = m2.group(1)
+    s = s[:m2.end()] + (
+        '\n' + indent + 'ListRow(MikaIcons.Spark, "本机模型", "不联网，在手机上跑",\n'
+        + indent + '    onClick = onOpenLocalModel) { RowChevron() }'
+    ) + s[m2.end():]
     m = re.search(r'^fun SettingsScreen\(', s, re.M)
     assert m, 'SettingsScreen 定义未找到'
     i = s.index('onBack: () -> Unit', m.start())
     s = s[:i] + 'onOpenLocalModel: () -> Unit,\n    ' + s[i:]
-
-    # 2) 加一行入口（紧跟「模型」那一行之后）
-    m2 = re.search(r'^(\s*)ListRow\(MikaIcons\.Spark, stringResource\(R\.string\.settings_model\).*$', s, re.M)
-    assert m2, '模型行未找到'
-    indent = m2.group(1)
-    s = s[:m2.end()] + ('\n' +
-        indent + 'ListRow(MikaIcons.Spark, "本机模型", "不联网，在手机上跑",\n' +
-        indent + '    onClick = onOpenLocalModel) { RowChevron() }'
-    ) + s[m2.end():]
-
     open(p, 'w', encoding='utf-8').write(s)
+    assert s.count('onOpenLocalModel') == 2, '入口数不对'
     print('  设置页已加入口')
-PY
-
-# 调用处传参：改 MainActivity 里 SettingsScreen(...) 的实参
-python3 - <<'PY'
-import re
-p = 'app/src/main/java/com/wangzan101/mika/ui/MainActivity.kt'
-s = open(p, encoding='utf-8').read()
-if 'onOpenLocalModel' in s and 'onOpenLocalModel = ' in s:
-    print('  调用处已传参，跳过')
-elif 'onOpenModels = { nav.push(Route.Models) }' in s:
-    s = s.replace('onOpenModels = { nav.push(Route.Models) }',
-                  'onOpenModels = { nav.push(Route.Models) },\n                onOpenLocalModel = { nav.push(Route.LocalModel) }', 1)
-    open(p, 'w', encoding='utf-8').write(s)
-    print('  调用处已传 onOpenLocalModel')
-else:
-    print('  ⚠ 没找到 onOpenModels 调用处，需人工确认')
-PY
+PYEOF
 
 # ── 4. 固定签名 ───────────────────────────────────────────────
 # Actions 每次是新 VM，AGP 自动生成的 debug.keystore 每次都换，
