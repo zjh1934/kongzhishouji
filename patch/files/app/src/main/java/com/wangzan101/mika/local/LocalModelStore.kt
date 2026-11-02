@@ -45,7 +45,7 @@ class LocalModelStore(private val root: File) {
 
     /** 空间够不够下一个模型:按上界再加两成余量算。 */
     fun hasRoomFor(model: LocalModelCatalog.Model): Boolean =
-        availableBytes() >= model.requiredBytes
+        availableBytes() >= model.totalBytes
 
     /**
      * 校验下完的文件:有摘要就比对 SHA-256,没摘要就只比对大小。
@@ -53,7 +53,7 @@ class LocalModelStore(private val root: File) {
      */
     fun verify(temp: File, file: LocalModelCatalog.File): Boolean {
         if (!temp.isFile || temp.length() <= 0) return false
-        if (file.sha256.isBlank()) return temp.length() <= file.sizeUpperBound
+        if (file.sha256.isBlank()) return temp.length() <= file.size
         return sha256(temp).equals(file.sha256, ignoreCase = true)
     }
 
