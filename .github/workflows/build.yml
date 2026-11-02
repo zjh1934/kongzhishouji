@@ -30,7 +30,6 @@ jobs:
           git clone --depth 1 https://github.com/wangzan101/Mika.git mika
           cd mika
           echo "Mika HEAD: $(git rev-parse --short=7 HEAD)"
-          echo "$GITHUB_STEP_SUMMARY"
 
       - name: 应用补丁
         if: github.event.inputs.mode == 'patch'
@@ -49,11 +48,40 @@ jobs:
           java-version: '17'
 
       - name: 构建 Debug
+        id: gradle
+        continue-on-error: true
         run: |
           cd mika
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
-        timeout-minutes: 45
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
+          echo "exit=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: 失败时把日志写回仓库（沙盒下不了 Actions 日志）
+        if: steps.gradle.outputs.exit != '0'
+        run: |
+          cd mika
+          mkdir -p ../repo/logs
+          {
+            echo "# 构建失败日志 run ${{ github.run_number }}"
+            echo "日期: $(date -u +%Y-%m-%d)"
+            echo
+            echo '## 报错行（e: 开头 + 前后各几行上下文）'
+            echo '```'
+            grep -n -E '^e:|^.*error:|Unresolved reference|Expecting|is not a function|Caused by' /tmp/gradle.log \
+              | head -60
+            echo '```'
+            echo
+            echo '## 最后 200 行'
+            echo '```'
+            tail -200 /tmp/gradle.log
+            echo '```'
+          } > ../repo/logs/build-${{ github.run_number }}.md
+          cd ../repo
+          git config user.name "builder"
+          git config user.email "builder@users.noreply.github.com"
+          git add -f logs
+          git diff --cached --quiet && echo "无变化" || (git commit -m "logs: run ${{ github.run_number }} 失败" && git push)
+          exit 1
 
       - name: 收产物
         run: |
