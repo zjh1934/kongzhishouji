@@ -114,7 +114,10 @@ class LocalModelController(app: Context) {
             val st = server.start(
                 modelPath = store.pathOf(m.main),
                 mmprojPath = store.pathOf(m.mmproj),
-                nCtx = 4096,
+                // 截图很吃上下文：Qwen3-VL 一张手机截图动辄上千 token，
+                // 4096 只够两三轮对话就顶到头，所以给 8192。
+                // 再大就要看内存了（KV cache 跟着涨），先按 4B 的稳妥值来。
+                nCtx = 8192,
                 nThreads = (Runtime.getRuntime().availableProcessors() - 1).coerceIn(2, 8),
             )
             _ui.value = _ui.value.copy(
