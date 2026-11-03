@@ -12,6 +12,10 @@
 200  1833451520  https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm
 200  1833451520  https://hf-mirror.com/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm
 200  ?  https://www.modelscope.cn/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/master/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm
+200  2659057664  https://huggingface.co/litert-community/Qwen3-4B-Instruct-2507/resolve/main/qwen3_4b_instruct_2507_mixed_int4.litertlm
+200  2659057664  https://hf-mirror.com/litert-community/Qwen3-4B-Instruct-2507/resolve/main/qwen3_4b_instruct_2507_mixed_int4.litertlm
+200  2272935936  https://huggingface.co/litert-community/Qwen3-4B/resolve/main/qwen3_4b_mixed_int4.litertlm
+200  2272935936  https://hf-mirror.com/litert-community/Qwen3-4B/resolve/main/qwen3_4b_mixed_int4.litertlm
 ```
 
 ## B. litert-community/Qwen3-4B 文件清单（HF API）
