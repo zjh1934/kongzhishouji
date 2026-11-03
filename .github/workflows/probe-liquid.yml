@@ -49,6 +49,13 @@ jobs:
             "$AAPT" dump badging "$APK" 2>&1 | head -12 >> $out
             echo '```' >> $out
             echo >> $out
+            echo '## 有没有无障碍 / 虚拟屏 / 高权限（读 Manifest）' >> $out
+            echo '```' >> $out
+            "$AAPT" dump xmltree "$APK" AndroidManifest.xml 2>/dev/null \
+              | grep -iE 'accessibility|virtualdisplay|shizuku|service|uses-permission|BIND_' \
+              | head -50 >> $out
+            echo '```' >> $out
+            echo >> $out
             echo "## 可直接安装的 APK 相对路径" >> $out
             echo '```' >> $out
             echo "${APK#tmp_liquid/x/}" >> $out
