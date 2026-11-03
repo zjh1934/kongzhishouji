@@ -38,6 +38,26 @@ internal object LocalModelSources {
     fun copyableUrl(model: LocalModelCatalog.Model, file: LocalModelCatalog.File): String =
         mirror(model.hfRepo, file.name)
 
+    /**
+     * 复制到剪贴板的**完整导入信息**：地址 + 期望元数据。
+     *
+     * 参考调研报告第 3 节：外部下载 → 导入要能携带期望元数据回到 App，
+     * 不能让用户只凭文件名配对。这样导入时若选错文件，界面能直接说
+     * 「期望 X（1.8 GB），实际选了 Y（0.4 GB）」，而不是笼统的「校验失败」。
+     * 没有官方哈希的如实写 unknown，绝不伪装成已校验。
+     */
+    fun importHint(model: LocalModelCatalog.Model, file: LocalModelCatalog.File, role: String): String {
+        val hash = file.sha256.ifBlank { "unknown" }
+        return buildString {
+            appendLine("下载地址：${copyableUrl(model, file)}")
+            appendLine("文件名：${file.name}")
+            appendLine("期望字节：${file.size}")
+            appendLine("SHA-256：$hash")
+            appendLine("角色：$role　模型：${model.id}")
+            appendLine("下好后回 App「本机模型」页，点对应文件行的「从设备导入」。")
+        }.trim()
+    }
+
     /** 从 302 响应体里抠出 CDN 直链。 */
     fun extractCdnLink(body: String): String? {
         val m = Regex("""href=["']([^"']+)["']""").find(body)
