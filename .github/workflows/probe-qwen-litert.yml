@@ -30,7 +30,11 @@ jobs:
             "https://www.modelscope.cn/litert-community/Qwen2-VL-2B/resolve/master/Qwen2-VL-2B.litertlm" \
             "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm" \
             "https://hf-mirror.com/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm" \
-            "https://www.modelscope.cn/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/master/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm" ; do
+            "https://www.modelscope.cn/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/master/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm" \
+            "https://huggingface.co/litert-community/Qwen3-4B-Instruct-2507/resolve/main/qwen3_4b_instruct_2507_mixed_int4.litertlm" \
+            "https://hf-mirror.com/litert-community/Qwen3-4B-Instruct-2507/resolve/main/qwen3_4b_instruct_2507_mixed_int4.litertlm" \
+            "https://huggingface.co/litert-community/Qwen3-4B/resolve/main/qwen3_4b_mixed_int4.litertlm" \
+            "https://hf-mirror.com/litert-community/Qwen3-4B/resolve/main/qwen3_4b_mixed_int4.litertlm" ; do
             code=$(curl -sIL --max-time 25 -o /dev/null -w '%{http_code}' "$u")
             len=$(curl -sIL --max-time 25 "$u" | grep -i '^content-length:' | tail -1 | tr -d '\r' | awk '{print $2}')
             echo "$code  ${len:-?}  $u" >> $out
