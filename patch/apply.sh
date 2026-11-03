@@ -159,29 +159,36 @@ PY
 
 # 导航：加一个页面。Route 是 enum，when 是语句不是表达式，加枚举不会破坏穷举性。
 python3 - <<'PY'
+import re
 p = 'app/src/main/java/com/wangzan101/mika/ui/Navigation.kt'
 s = open(p, encoding='utf-8').read()
-old = 'enum class Route { Chat, Settings, Memory, Plans, Browser, Run, Source, PhoneSetup, Models, SpeechModel, Welcome, ModelSetup, About, License, Screens }'
-assert old in s, 'Route 枚举未找到'
-if 'LocalModel' not in s:
-    s = s.replace(old, old.replace(', Screens }', ', Screens, LocalModel }'), 1)
+# ⚠️ 不要硬编码整行枚举：Mika 上游 2026-11-03 加了 Route.Usage，
+#   整行匹配的补丁当场失效。改成「认出 enum 块、往里追加一个」。
+m = re.search(r'enum class Route \{([^}]*)\}', s)
+assert m, 'Route 枚举未找到'
+if 'LocalModel' not in m.group(1):
+    body = m.group(1).strip().rstrip(',').strip()
+    s = s[:m.start()] + 'enum class Route { ' + body + ', LocalModel }' + s[m.end():]
     open(p, 'w', encoding='utf-8').write(s)
-    print('  Route 已加 LocalModel')
+    print('  Route 已加 LocalModel（结构感知）')
 else:
     print('  Route 已有 LocalModel，跳过')
 PY
 
 # when 分支
 python3 - <<'PY'
+import re
 p = 'app/src/main/java/com/wangzan101/mika/ui/MainActivity.kt'
 s = open(p, encoding='utf-8').read()
-anchor = '        Route.Models -> ModelsScreen(store, onBack = back, onOpenSpeech = { nav.push(Route.SpeechModel) })'
-assert anchor in s, 'Route.Models 分支未找到'
 if 'Route.LocalModel ->' not in s:
-    s = s.replace(anchor, anchor +
-        '\n        Route.LocalModel -> com.wangzan101.mika.local.LocalModelScreen(onBack = back)', 1)
+    # 上游给 ModelsScreen 加了 onOpenUsage 参数，整行硬编码又失效了。
+    # 只认「以 Route.Models -> ModelsScreen( 开头的那一行」，后面多长都不管。
+    m = re.search(r'^(\s*)Route\.Models -> ModelsScreen\(.*$', s, re.M)
+    assert m, 'Route.Models 分支未找到'
+    ins = '\n' + m.group(1) + 'Route.LocalModel -> com.wangzan101.mika.local.LocalModelScreen(onBack = back)'
+    s = s[:m.end()] + ins + s[m.end():]
     open(p, 'w', encoding='utf-8').write(s)
-    print('  MainActivity 已加 LocalModel 分支')
+    print('  MainActivity 已加 LocalModel 分支（正则）')
 else:
     print('  MainActivity 分支已存在，跳过')
 PY
@@ -233,23 +240,28 @@ else:
     s = s.replace(a, a + '\n            onOpenLocalModel = onOpenLocalModel,', 1)
 
     open(p, 'w', encoding='utf-8').write(s)
-    # 4 处：两个签名各一个参数、调用处一行里出现两次、使用处一个
-    assert s.count('onOpenLocalModel') == 5, '入口数不对: %d' % s.count('onOpenLocalModel')
+    # 至少两处签名 + 一处透传 + 一行入口；上游多加了参数不影响
+    assert s.count('onOpenLocalModel') >= 4, '入口数不对: %d' % s.count('onOpenLocalModel')
     print('  设置页已加入口（SettingsScreen -> SettingsContent 透传）')
 PYEOF
 
 # MainActivity 里 SettingsScreen(...) 的实参
 python3 - <<'PYEOF'
+import re
 p = 'app/src/main/java/com/wangzan101/mika/ui/MainActivity.kt'
 s = open(p, encoding='utf-8').read()
 if 'onOpenLocalModel = ' in s:
     print('  调用处已传参，跳过')
 else:
-    a = 'onOpenModels = { nav.push(Route.Models) }'
-    assert a in s, 'onOpenModels 调用处未找到'
-    s = s.replace(a, a + ',\n                onOpenLocalModel = { nav.push(Route.LocalModel) }', 1)
+    # 上游这一行结尾自带逗号；直接字符串替换会拼出 `}, ,`。
+    # 认整行、剥掉原逗号再补，保证只出现一个。
+    m = re.search(r'^(\s*)onOpenModels = \{ nav\.push\(Route\.Models\) \},?\s*$', s, re.M)
+    assert m, 'onOpenModels 调用处未找到'
+    indent = m.group(1)
+    line = m.group(0).strip().rstrip(',').strip()
+    s = s[:m.start()] + indent + line + ',\n' + indent + 'onOpenLocalModel = { nav.push(Route.LocalModel) },' + s[m.end():]
     open(p, 'w', encoding='utf-8').write(s)
-    print('  调用处已传 onOpenLocalModel')
+    print('  调用处已传 onOpenLocalModel（正则，无双逗号）')
 PYEOF
 
 # 前台服务权限：Android 12+ 会杀没有前台服务保护的后台子进程（SIGKILL，捕获不到）
