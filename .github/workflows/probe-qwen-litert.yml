@@ -1,0 +1,77 @@
+name: Probe Qwen LiteRT Links
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: 核实 LiquidAgent 官方千问预设直链 + Qwen3-4B 仓库文件清单
+        run: |
+          mkdir -p probe-result
+          out=probe-result/qwen-litert-links.md
+          echo "# 千问 LiteRT 模型链接核实" > $out
+          echo "日期: $(date -u +%Y-%m-%d)" >> $out
+          echo >> $out
+          echo '## A. LiquidAgent 官方 14 预设里三条千问（逐个 HEAD，不准就明说）' >> $out
+          echo '```' >> $out
+          for u in \
+            "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm" \
+            "https://hf-mirror.com/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm" \
+            "https://www.modelscope.cn/litert-community/Qwen2.5-1.5B-Instruct/resolve/master/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm" \
+            "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/main/Qwen2-VL-2B.litertlm" \
+            "https://hf-mirror.com/litert-community/Qwen2-VL-2B/resolve/main/Qwen2-VL-2B.litertlm" \
+            "https://www.modelscope.cn/litert-community/Qwen2-VL-2B/resolve/master/Qwen2-VL-2B.litertlm" \
+            "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm" \
+            "https://hf-mirror.com/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm" \
+            "https://www.modelscope.cn/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/master/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm" ; do
+            code=$(curl -sIL --max-time 25 -o /dev/null -w '%{http_code}' "$u")
+            len=$(curl -sIL --max-time 25 "$u" | grep -i '^content-length:' | tail -1 | tr -d '\r' | awk '{print $2}')
+            echo "$code  ${len:-?}  $u" >> $out
+          done
+          echo '```' >> $out
+          echo >> $out
+          echo '## B. litert-community/Qwen3-4B 文件清单（HF API）' >> $out
+          echo '```' >> $out
+          curl -sSL --max-time 40 "https://huggingface.co/api/models/litert-community/Qwen3-4B?blobs=true" \
+            | python3 -c "
+import sys,json
+try: d=json.load(sys.stdin)
+except Exception as e: print('API 失败',e); sys.exit()
+for s in d.get('siblings',[]):
+    print(s.get('rfilename'), s.get('size','?'))
+" >> $out
+          echo '```' >> $out
+          echo >> $out
+          echo '## C. Qwen3-4B-Instruct-2507 文件清单（HF API）' >> $out
+          echo '```' >> $out
+          curl -sSL --max-time 40 "https://huggingface.co/api/models/litert-community/Qwen3-4B-Instruct-2507?blobs=true" \
+            | python3 -c "
+import sys,json
+try: d=json.load(sys.stdin)
+except Exception as e: print('API 失败',e); sys.exit()
+for s in d.get('siblings',[]):
+    print(s.get('rfilename'), s.get('size','?'))
+" >> $out
+          echo '```' >> $out
+          echo >> $out
+          echo '## D. 两张模型卡里关于运行时版本的原话' >> $out
+          echo '```' >> $out
+          for repo in Qwen3-4B Qwen3-4B-Instruct-2507; do
+            echo "--- $repo ---" >> $out
+            curl -sSL --max-time 40 "https://huggingface.co/litert-community/$repo/raw/main/README.md" \
+              | grep -iE '0\.1[789]|0\.2[0-9]|requires|runtime|version|context|4096|2048|8192' | head -18 >> $out
+          done
+          echo '```' >> $out
+      - name: 提交回仓库
+        run: |
+          git config user.name "probe"
+          git config user.email "probe@users.noreply.github.com"
+          git add -f probe-result
+          git diff --cached --quiet && echo "无变化" || (git commit -m "probe: 千问 litertlm 链接" && git push)
