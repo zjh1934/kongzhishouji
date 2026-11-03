@@ -1,0 +1,86 @@
+name: Probe llama args
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  args:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下载 b12032 的 ubuntu-x64 与 android-arm64 包
+        run: |
+          mkdir -p /tmp/lx /tmp/la
+          cd /tmp/lx
+          curl -sSL -o x.tar.gz "https://github.com/ggml-org/llama.cpp/releases/download/b12032/llama-b12032-bin-ubuntu-x64.tar.gz"
+          tar xzf x.tar.gz
+          echo "=== x64 llama-server ==="
+          find . -name 'llama-server' -type f | head -3
+          cd /tmp/la
+          curl -sSL -o a.tar.gz "https://github.com/ggml-org/llama.cpp/releases/download/b12032/llama-b12032-bin-android-arm64.tar.gz"
+          tar xzf a.tar.gz
+          echo "=== arm64 目录 ==="
+          find . -maxdepth 2 -type d | head -5
+
+      - name: 核实 --jinja 与我们的完整启动参数
+        run: |
+          OUT=probe-result/llama-args.md
+          mkdir -p probe-result
+          BIN=$(find /tmp/lx -name 'llama-server' -type f | head -1)
+          DIR=$(dirname "$BIN")
+          echo "# b12032 启动参数核实" > $OUT
+          echo >> $OUT
+          echo "日期: $(date -u +%F)　二进制: $BIN" >> $OUT
+          echo >> $OUT
+
+          echo '## 1. --help 里 jinja / webui 相关行' >> $OUT
+          echo '```' >> $OUT
+          LD_LIBRARY_PATH="$DIR" "$BIN" --help 2>&1 | grep -i -E "jinja|webui|chat-template|chat_template|no-context-shift" >> $OUT || echo "(help 里没有匹配)" >> $OUT
+          echo '```' >> $OUT
+          echo >> $OUT
+
+          echo '## 2. 完整 --help 行数与前后片段' >> $OUT
+          echo '```' >> $OUT
+          LD_LIBRARY_PATH="$DIR" "$BIN" --help > /tmp/help.txt 2>&1 || true
+          echo "总行数: $(wc -l < /tmp/help.txt)" >> $OUT
+          head -12 /tmp/help.txt >> $OUT
+          echo '...' >> $OUT
+          echo '```' >> $OUT
+          echo >> $OUT
+
+          echo '## 3. 实测：我们真实启动参数（模型路径故意不存在）' >> $OUT
+          echo '```' >> $OUT
+          echo "--- 带 --jinja ---" >> $OUT
+          LD_LIBRARY_PATH="$DIR" timeout 10 "$BIN" \
+            -m /nope.gguf --mmproj /nope-mmproj.gguf \
+            --host 127.0.0.1 --port 18080 -c 8192 -t 4 \
+            --jinja --no-webui 2>&1 | head -25 >> $OUT || echo "(exit $?)" >> $OUT
+          echo >> $OUT
+          echo "--- 不带 --jinja（对照）---" >> $OUT
+          LD_LIBRARY_PATH="$DIR" timeout 10 "$BIN" \
+            -m /nope.gguf --mmproj /nope-mmproj.gguf \
+            --host 127.0.0.1 --port 18081 -c 8192 -t 4 \
+            --no-webui 2>&1 | head -25 >> $OUT || echo "(exit $?)" >> $OUT
+          echo '```' >> $OUT
+          echo >> $OUT
+
+          echo '## 4. android-arm64 二进制里有没有 jinja 字符串' >> $OUT
+          echo '```' >> $OUT
+          IMPL=$(find /tmp/la -name 'libllama-server-impl.so' | head -1)
+          echo "impl: $IMPL" >> $OUT
+          if [ -n "$IMPL" ]; then
+            strings "$IMPL" | grep -i -E "jinja|chat.template|webui" | head -20 >> $OUT || echo "(无匹配)" >> $OUT
+          fi
+          echo '```' >> $OUT
+
+      - name: 提交结果
+        run: |
+          git config user.name "probe"
+          git config user.email "probe@users.noreply.github.com"
+          git add -f probe-result/llama-args.md
+          git diff --cached --quiet && echo "无变化" || (git commit -m "probe: llama b12032 参数核实" && git push)
