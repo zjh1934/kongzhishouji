@@ -40,25 +40,13 @@ jobs:
           echo '## B. litert-community/Qwen3-4B 文件清单（HF API）' >> $out
           echo '```' >> $out
           curl -sSL --max-time 40 "https://huggingface.co/api/models/litert-community/Qwen3-4B?blobs=true" \
-            | python3 -c "
-import sys,json
-try: d=json.load(sys.stdin)
-except Exception as e: print('API 失败',e); sys.exit()
-for s in d.get('siblings',[]):
-    print(s.get('rfilename'), s.get('size','?'))
-" >> $out
+            | python3 -c 'import sys,json; d=json.load(sys.stdin); [print(s.get("rfilename"), s.get("size","?")) for s in d.get("siblings",[])]' >> $out
           echo '```' >> $out
           echo >> $out
           echo '## C. Qwen3-4B-Instruct-2507 文件清单（HF API）' >> $out
           echo '```' >> $out
           curl -sSL --max-time 40 "https://huggingface.co/api/models/litert-community/Qwen3-4B-Instruct-2507?blobs=true" \
-            | python3 -c "
-import sys,json
-try: d=json.load(sys.stdin)
-except Exception as e: print('API 失败',e); sys.exit()
-for s in d.get('siblings',[]):
-    print(s.get('rfilename'), s.get('size','?'))
-" >> $out
+            | python3 -c 'import sys,json; d=json.load(sys.stdin); [print(s.get("rfilename"), s.get("size","?")) for s in d.get("siblings",[])]' >> $out
           echo '```' >> $out
           echo >> $out
           echo '## D. 两张模型卡里关于运行时版本的原话' >> $out
