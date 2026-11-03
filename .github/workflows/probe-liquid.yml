@@ -1,0 +1,66 @@
+name: Probe LiquidAgent Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下载并解剖 LiquidAgent release zip
+        run: |
+          set -x
+          mkdir -p probe-result tmp_liquid
+          out=probe-result/liquidagent-release.md
+          echo "# LiquidAgent 发布包内容核实" > $out
+          echo "日期: $(date -u +%Y-%m-%d)" >> $out
+          echo >> $out
+          URL="https://github.com/Rickeal-Boss/Android-Agent-harness/releases/download/latest/LiquidAgent-release-latest.zip"
+          curl -sSL --max-time 120 "$URL" -o tmp_liquid/release.zip
+          echo '## 下载结果' >> $out
+          echo '```' >> $out
+          ls -l tmp_liquid/release.zip >> $out
+          file tmp_liquid/release.zip >> $out
+          echo '```' >> $out
+          echo >> $out
+          echo '## zip 内文件清单' >> $out
+          echo '```' >> $out
+          unzip -l tmp_liquid/release.zip 2>&1 | head -60 >> $out
+          echo '```' >> $out
+          echo >> $out
+          rm -rf tmp_liquid/x && mkdir -p tmp_liquid/x
+          unzip -o -q tmp_liquid/release.zip -d tmp_liquid/x 2>/dev/null || true
+          echo '## 找 APK' >> $out
+          echo '```' >> $out
+          find tmp_liquid/x -iname '*.apk' -printf '%s  %p\n' >> $out
+          echo '```' >> $out
+          echo >> $out
+          APK=$(find tmp_liquid/x -iname '*.apk' | head -1)
+          if [ -n "$APK" ]; then
+            echo '## APK 身份（aapt dump badging）' >> $out
+            echo '```' >> $out
+            AAPT=$(find "$ANDROID_HOME"/build-tools -name aapt 2>/dev/null | sort | tail -1)
+            "$AAPT" dump badging "$APK" 2>&1 | head -12 >> $out
+            echo '```' >> $out
+            echo >> $out
+            echo "## 可直接安装的 APK 相对路径" >> $out
+            echo '```' >> $out
+            echo "${APK#tmp_liquid/x/}" >> $out
+            echo '```' >> $out
+          else
+            echo '## 结论' >> $out
+            echo 'zip 里没有 .apk —— 不是可直接安装的包，需要自行构建。' >> $out
+          fi
+
+      - name: 提交回仓库
+        run: |
+          git config user.name "probe"
+          git config user.email "probe@users.noreply.github.com"
+          git add -f probe-result
+          git diff --cached --quiet && echo "无变化" || (git commit -m "probe: LiquidAgent 发布包内容" && git push)
