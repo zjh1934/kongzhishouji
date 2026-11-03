@@ -3,7 +3,7 @@
 
 ## 下载结果
 ```
--rw-r--r-- 1 runner runner 24089180 Nov  3 03:24 tmp_liquid/release.zip
+-rw-r--r-- 1 runner runner 24089180 Nov  3 03:26 tmp_liquid/release.zip
 tmp_liquid/release.zip: Zip archive data, at least v2.0 to extract, compression method=deflate
 ```
 
@@ -36,6 +36,22 @@ uses-permission: name='android.permission.WAKE_LOCK'
 uses-permission: name='com.rickeal.agent.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
 application-label:'LiquidAgent'
 application-label-af:'LiquidAgent'
+```
+
+## 有没有无障碍 / 虚拟屏 / 高权限（读 Manifest）
+```
+    E: uses-permission (line=26)
+    E: uses-permission (line=34)
+    E: uses-permission (line=43)
+    E: uses-permission (line=64)
+      A: android:name(0x01010003)="android.permission.FOREGROUND_SERVICE" (Raw: "android.permission.FOREGROUND_SERVICE")
+    E: uses-permission (line=65)
+      A: android:name(0x01010003)="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" (Raw: "android.permission.FOREGROUND_SERVICE_SPECIAL_USE")
+    E: uses-permission (line=66)
+    E: uses-permission (line=72)
+      E: service (line=177)
+        A: android:name(0x01010003)="com.rickeal.agent.core.data.background.AgentForegroundService" (Raw: "com.rickeal.agent.core.data.background.AgentForegroundService")
+        A: android:foregroundServiceType(0x01010599)=(type 0x11)0x40000000
 ```
 
 ## 可直接安装的 APK 相对路径
